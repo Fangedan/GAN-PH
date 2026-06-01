@@ -1,0 +1,400 @@
+[001/200] Train loss: 1559.0527 Valid loss: 1443.8195
+
+[002/200] Train loss: 1548.4171 Valid loss: 1443.1265
+
+[003/200] Train loss: 1543.0619 Valid loss: 1437.7131
+
+[004/200] Train loss: 1538.8304 Valid loss: 1444.5055
+
+[005/200] Train loss: 1533.9268 Valid loss: 1442.1912
+
+[006/200] Train loss: 1528.4811 Valid loss: 1440.3813
+
+[007/200] Train loss: 1524.0601 Valid loss: 1445.1736
+
+[008/200] Train loss: 1520.3488 Valid loss: 1444.0928
+
+[009/200] Train loss: 1514.5149 Valid loss: 1440.9495
+
+[010/200] Train loss: 1507.6698 Valid loss: 1436.8888
+
+[011/200] Train loss: 1507.1475 Valid loss: 1441.6852
+
+[012/200] Train loss: 1497.8374 Valid loss: 1434.5117
+
+[013/200] Train loss: 1491.4292 Valid loss: 1433.6321
+
+[014/200] Train loss: 1484.1550 Valid loss: 1435.7444
+
+[015/200] Train loss: 1477.4513 Valid loss: 1431.5674
+
+[016/200] Train loss: 1470.5045 Valid loss: 1432.2354
+
+[017/200] Train loss: 1463.8854 Valid loss: 1439.2532
+
+[018/200] Train loss: 1460.3989 Valid loss: 1424.7131
+
+[019/200] Train loss: 1451.0935 Valid loss: 1439.4639
+
+[020/200] Train loss: 1443.6967 Valid loss: 1439.6593
+
+[021/200] Train loss: 1436.6801 Valid loss: 1429.0054
+
+[022/200] Train loss: 1431.0870 Valid loss: 1434.7715
+
+[023/200] Train loss: 1425.6274 Valid loss: 1415.3329
+
+[024/200] Train loss: 1417.3783 Valid loss: 1414.8827
+
+[025/200] Train loss: 1408.7280 Valid loss: 1420.3705
+
+[026/200] Train loss: 1402.0354 Valid loss: 1395.2324
+
+[027/200] Train loss: 1397.0740 Valid loss: 1431.9399
+
+[028/200] Train loss: 1390.9983 Valid loss: 1411.5754
+
+[029/200] Train loss: 1382.2844 Valid loss: 1413.0243
+
+[030/200] Train loss: 1373.2838 Valid loss: 1398.9644
+
+[031/200] Train loss: 1366.1954 Valid loss: 1402.1027
+
+[032/200] Train loss: 1359.2091 Valid loss: 1373.8727
+
+[033/200] Train loss: 1352.1722 Valid loss: 1392.0072
+
+[034/200] Train loss: 1345.1880 Valid loss: 1374.2197
+
+[035/200] Train loss: 1336.8014 Valid loss: 1379.7362
+
+[036/200] Train loss: 1328.9620 Valid loss: 1366.4755
+
+[037/200] Train loss: 1321.2366 Valid loss: 1361.5433
+
+[038/200] Train loss: 1313.7334 Valid loss: 1357.7267
+
+[039/200] Train loss: 1306.0858 Valid loss: 1350.8044
+
+[040/200] Train loss: 1298.5336 Valid loss: 1342.3536
+
+[041/200] Train loss: 1291.1444 Valid loss: 1341.1582
+
+[042/200] Train loss: 1284.1138 Valid loss: 1321.3171
+
+[043/200] Train loss: 1277.2866 Valid loss: 1325.2832
+
+[044/200] Train loss: 1271.7518 Valid loss: 1294.4301
+
+[045/200] Train loss: 1264.6913 Valid loss: 1308.7744
+
+[046/200] Train loss: 1256.4148 Valid loss: 1302.2928
+
+[047/200] Train loss: 1245.7194 Valid loss: 1291.7416
+
+[048/200] Train loss: 1237.7213 Valid loss: 1287.0383
+
+[049/200] Train loss: 1230.1709 Valid loss: 1244.9413
+
+[050/200] Train loss: 1223.0626 Valid loss: 1310.2522
+
+[051/200] Train loss: 1216.0537 Valid loss: 1238.8230
+
+[052/200] Train loss: 1206.3582 Valid loss: 1125.7158
+
+[053/200] Train loss: 1199.0607 Valid loss: 1261.5992
+
+[054/200] Train loss: 1191.5311 Valid loss: 1162.7943
+
+[055/200] Train loss: 1183.2609 Valid loss: 1101.5834
+
+[056/200] Train loss: 1175.9420 Valid loss: 1128.1235
+
+[057/200] Train loss: 1168.7308 Valid loss: 1127.4407
+
+[058/200] Train loss: 1160.5182 Valid loss: 1038.4185
+
+[059/200] Train loss: 1151.5696 Valid loss: 1105.8795
+
+[060/200] Train loss: 1142.3525 Valid loss: 1035.8298
+
+[061/200] Train loss: 1133.2100 Valid loss: 1070.9781
+
+[062/200] Train loss: 1124.4326 Valid loss: 1073.5299
+
+[063/200] Train loss: 1115.8477 Valid loss: 1053.7173
+
+[064/200] Train loss: 1107.4709 Valid loss: 1098.7496
+
+[065/200] Train loss: 1099.7010 Valid loss: 1029.2964
+
+[066/200] Train loss: 1094.4788 Valid loss: 1095.6548
+
+[067/200] Train loss: 1090.2540 Valid loss: 1010.3189
+
+[068/200] Train loss: 1080.3020 Valid loss: 1028.7289
+
+[069/200] Train loss: 1069.3788 Valid loss: 1077.2705
+
+[070/200] Train loss: 1059.9922 Valid loss: 923.5262
+
+[071/200] Train loss: 1049.6110 Valid loss: 1165.3193
+
+[072/200] Train loss: 1042.0997 Valid loss: 836.3214
+
+[073/200] Train loss: 1031.8767 Valid loss: 1045.0846
+
+[074/200] Train loss: 1022.2616 Valid loss: 989.1033
+
+[075/200] Train loss: 1013.4713 Valid loss: 924.6388
+
+[076/200] Train loss: 1006.1704 Valid loss: 995.0618
+
+[077/200] Train loss: 1000.0809 Valid loss: 822.5472
+
+[078/200] Train loss: 991.7877 Valid loss: 914.5651
+
+[079/200] Train loss: 984.0338 Valid loss: 898.0422
+
+[080/200] Train loss: 979.7555 Valid loss: 841.7208
+
+[081/200] Train loss: 968.6730 Valid loss: 933.4449
+
+[082/200] Train loss: 955.5625 Valid loss: 886.2636
+
+[083/200] Train loss: 945.1074 Valid loss: 1088.7682
+
+[084/200] Train loss: 940.5579 Valid loss: 767.1594
+
+[085/200] Train loss: 924.2510 Valid loss: 606.7247
+
+[086/200] Train loss: 916.4276 Valid loss: 1114.0176
+
+[087/200] Train loss: 912.3510 Valid loss: 927.4814
+
+[088/200] Train loss: 901.1317 Valid loss: 439.1603
+
+[089/200] Train loss: 891.3426 Valid loss: 758.9142
+
+[090/200] Train loss: 883.6328 Valid loss: 545.3940
+
+[091/200] Train loss: 875.2725 Valid loss: 485.1993
+
+[092/200] Train loss: 864.7224 Valid loss: 892.0364
+
+[093/200] Train loss: 855.0657 Valid loss: 819.1221
+
+[094/200] Train loss: 845.4207 Valid loss: 180.4408
+
+[095/200] Train loss: 838.8528 Valid loss: 883.3820
+
+[096/200] Train loss: 824.8861 Valid loss: 749.1952
+
+[097/200] Train loss: 811.8984 Valid loss: 474.4218
+
+[098/200] Train loss: 802.0588 Valid loss: 783.4467
+
+[099/200] Train loss: 793.0740 Valid loss: 650.8412
+
+[100/200] Train loss: 785.4898 Valid loss: 499.8257
+
+[101/200] Train loss: 777.0709 Valid loss: 600.4886
+
+[102/200] Train loss: 764.5508 Valid loss: 689.0753
+
+[103/200] Train loss: 751.8458 Valid loss: 374.4802
+
+[104/200] Train loss: 742.1381 Valid loss: 745.9617
+
+[105/200] Train loss: 732.1018 Valid loss: 517.4855
+
+[106/200] Train loss: 723.2593 Valid loss: 520.3385
+
+[107/200] Train loss: 715.7197 Valid loss: 747.4146
+
+[108/200] Train loss: 707.6422 Valid loss: 515.6702
+
+[109/200] Train loss: 696.8456 Valid loss: 365.5572
+
+[110/200] Train loss: 686.1110 Valid loss: 829.5078
+
+[111/200] Train loss: 676.8297 Valid loss: 374.8649
+
+[112/200] Train loss: 667.9613 Valid loss: 318.8625
+
+[113/200] Train loss: 663.3993 Valid loss: 1010.4122
+
+[114/200] Train loss: 657.6528 Valid loss: 922.8049
+
+[115/200] Train loss: 649.2067 Valid loss: 763.5702
+
+[116/200] Train loss: 666.0211 Valid loss: 683.3359
+
+[117/200] Train loss: 725.6656 Valid loss: 427.5046
+
+[118/200] Train loss: 655.7853 Valid loss: 835.2654
+
+[119/200] Train loss: 747.8879 Valid loss: 369.2990
+
+[120/200] Train loss: 641.8990 Valid loss: 1591.1953
+
+[121/200] Train loss: 606.0406 Valid loss: 5191.7241
+
+[122/200] Train loss: 811.1592 Valid loss: 593.2797
+
+[123/200] Train loss: 649.5446 Valid loss: 699.0772
+
+[124/200] Train loss: 595.1166 Valid loss: 760.2183
+
+[125/200] Train loss: 578.1146 Valid loss: 432.7770
+
+[126/200] Train loss: 553.9123 Valid loss: 567.6393
+
+[127/200] Train loss: 535.1869 Valid loss: 932.2925
+
+[128/200] Train loss: 520.5573 Valid loss: 935.6080
+
+[129/200] Train loss: 508.9304 Valid loss: 610.4327
+
+[130/200] Train loss: 495.3145 Valid loss: 376.8487
+
+[131/200] Train loss: 482.6798 Valid loss: 307.0726
+
+[132/200] Train loss: 470.2628 Valid loss: 266.7750
+
+[133/200] Train loss: 457.7266 Valid loss: 233.2428
+
+[134/200] Train loss: 445.4323 Valid loss: 178.2485
+
+[135/200] Train loss: 433.1900 Valid loss: 96.5162
+
+[136/200] Train loss: 420.9503 Valid loss: 80.2066
+
+[137/200] Train loss: 408.7564 Valid loss: 70.6285
+
+[138/200] Train loss: 396.7075 Valid loss: 92.3039
+
+[139/200] Train loss: 385.5500 Valid loss: 252.2237
+
+[140/200] Train loss: 380.0831 Valid loss: 291.2615
+
+[141/200] Train loss: 387.2848 Valid loss: 472.6835
+
+[142/200] Train loss: 373.4539 Valid loss: 385.4480
+
+[143/200] Train loss: 353.0712 Valid loss: 102.0182
+
+[144/200] Train loss: 332.6803 Valid loss: 176.5435
+
+[145/200] Train loss: 317.2433 Valid loss: 214.7340
+
+[146/200] Train loss: 305.2091 Valid loss: 211.1597
+
+[147/200] Train loss: 292.0468 Valid loss: 218.2270
+
+[148/200] Train loss: 278.8387 Valid loss: 195.6768
+
+[149/200] Train loss: 265.9162 Valid loss: 261.6927
+
+[150/200] Train loss: 253.1326 Valid loss: 230.7859
+
+[151/200] Train loss: 240.3821 Valid loss: 238.8922
+
+[152/200] Train loss: 227.9165 Valid loss: 256.0668
+
+[153/200] Train loss: 217.0824 Valid loss: 266.9225
+
+[154/200] Train loss: 219.0796 Valid loss: 355.5150
+
+[155/200] Train loss: 267.9031 Valid loss: 365.9293
+
+[156/200] Train loss: 262.6465 Valid loss: 808.4937
+
+[157/200] Train loss: 188.7207 Valid loss: 209.3637
+
+[158/200] Train loss: 221.6895 Valid loss: 247.5744
+
+[159/200] Train loss: 188.4942 Valid loss: 264.8973
+
+[160/200] Train loss: 168.2725 Valid loss: 128.0270
+
+[161/200] Train loss: 145.7093 Valid loss: 332.1009
+
+[162/200] Train loss: 145.2570 Valid loss: 207.3822
+
+[163/200] Train loss: 114.6409 Valid loss: 50.0157
+
+[164/200] Train loss: 101.3877 Valid loss: 119.8924
+
+[165/200] Train loss: 94.5570 Valid loss: 217.6227
+
+[166/200] Train loss: 131.2442 Valid loss: 328.0094
+
+[167/200] Train loss: 152.1326 Valid loss: 289.2060
+
+[168/200] Train loss: 199.9497 Valid loss: 1153.3176
+
+[169/200] Train loss: 145.1825 Valid loss: 745.4102
+
+[170/200] Train loss: 112.2981 Valid loss: 362.4336
+
+[171/200] Train loss: 111.8225 Valid loss: 1091.1055
+
+[172/200] Train loss: 70.4873 Valid loss: 313.8535
+
+[173/200] Train loss: 83.1245 Valid loss: 1107.0037
+
+[174/200] Train loss: 69.9896 Valid loss: 77.4624
+
+[175/200] Train loss: 91.6291 Valid loss: 198.6219
+
+[176/200] Train loss: 43.2496 Valid loss: 1680.6262
+
+[177/200] Train loss: 85.7257 Valid loss: 466.8053
+
+[178/200] Train loss: 67.3825 Valid loss: 268.9332
+
+[179/200] Train loss: 114.9501 Valid loss: 190.3544
+
+[180/200] Train loss: 56.5731 Valid loss: 537.0706
+
+[181/200] Train loss: 58.5386 Valid loss: 249.0202
+
+[182/200] Train loss: 96.8604 Valid loss: 161.7845
+
+[183/200] Train loss: 38.6065 Valid loss: 749.6564
+
+[184/200] Train loss: 82.1613 Valid loss: 212.0604
+
+[185/200] Train loss: 55.2345 Valid loss: 100.8128
+
+[186/200] Train loss: 53.0461 Valid loss: 533.2315
+
+[187/200] Train loss: 48.7932 Valid loss: 494.7495
+
+[188/200] Train loss: 57.3189 Valid loss: 132.3823
+
+[189/200] Train loss: 72.8974 Valid loss: 195.5598
+
+[190/200] Train loss: 37.2400 Valid loss: 548.9824
+
+[191/200] Train loss: 68.3138 Valid loss: 263.6715
+
+[192/200] Train loss: 39.2711 Valid loss: 48.7901
+
+[193/200] Train loss: 45.2164 Valid loss: 217.1749
+
+[194/200] Train loss: 50.8487 Valid loss: 232.9744
+
+[195/200] Train loss: 55.7757 Valid loss: 125.0479
+
+[196/200] Train loss: 38.3075 Valid loss: 20.4613
+
+[197/200] Train loss: 56.5108 Valid loss: 114.8447
+
+[198/200] Train loss: 25.7047 Valid loss: 103.2658
+
+[199/200] Train loss: 52.3093 Valid loss: 143.6539
+
+[200/200] Train loss: 34.9017 Valid loss: 32.7612
+
