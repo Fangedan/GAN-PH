@@ -18,14 +18,14 @@ from torchsummary import summary
 import pandas as pd
 
 # --------- hyperparameters --------- #
-n_struc = 9750  # number of structures
+n_struc = 50  # number of structures
 n_size = 64     # voxel size of the structure
 seed = 42       # random seed
 b_size = 128    # batch size
 epochs = 200    # number of epochs
 
 Input_header = Path(
-    "path/to/your/training/data"
+    "./synthetic_data"
     )  # path to the training data
 # ----------------------------------- #
 
