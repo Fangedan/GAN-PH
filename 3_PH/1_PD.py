@@ -175,6 +175,6 @@ def saving_PD(header, out_folder, n_struc = 300):
     return
 
 def main():
-    header = "../data/structure"  # path to the structure data
+    header = "../synthetic_data"  # path to the structure data
     out_folder = "../data/persistent_diagram"  # path to save the persistent diagram
     saving_PD(header, out_folder, n_struc = 300)
