@@ -27,8 +27,8 @@ def main():
     b_size = 64  # batch size
     epochs = 50  # the number of epochs
     latent_size = 100  # the size of latent vector
-    n_struc = 17550  # the number of structure data
-    in_header = "path/to/your/structure/data"
+    n_struc = 50  # the number of structure data
+    in_header = "../synthetic_data"
 
     # ----- 02 Load Training Data ----- #
     load.torch_fix_seed(seed=500)
@@ -56,7 +56,7 @@ def main():
 
     # Estimator
     model_e = models.Estimator(in_ch=1, ndf=32).to(device)
-    path = "path/to/your/estimator/weight"
+    path = "../2_CNN/save_model/model_200epoch.pth"
     load_weight = torch.load(path)
     model_e.load_state_dict(load_weight)
     model_e = model_e.eval()
