@@ -25,7 +25,7 @@ b_size = 128    # batch size
 epochs = 200    # number of epochs
 
 Input_header = Path(
-    "./synthetic_data"
+    "../synthetic_data"
     )  # path to the training data
 # ----------------------------------- #
 
