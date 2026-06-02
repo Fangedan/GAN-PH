@@ -131,11 +131,14 @@ def cat_dfs(header, phase, dim):
 
 def main():
     ## ------ Load the data ------ ##
-    # Load the data
-    header = "path/to/the/folder/where/the/persistence/images/are/saved"
-    phase = "Ni"  # "Ni", "YSZ", or "Pore" you want to analyze
-    dim = "Dim0"  # "Dim0", "Dim1", "Dim2", or "Dim0-2" you want to analyze
-    pd_vects = cat_dfs(header, phase, dim)
+    phase = "Ni"  # "Ni", "YSZ", or "Pore"
+    dim = "Dim_0"  # "Dim_0", "Dim_1", "Dim_2", or "all"
+
+    # Load directly from our persistence images folder
+    pi_path = "../data/persistent_images/phase_{}/P_images_{}.pkl".format(phase, dim)
+    with open(pi_path, "rb") as f:
+        pd_vects = pickle.load(f)
+
     ad = AnodesData(pd_vects)
 
     # Calculate PCA
@@ -143,16 +146,29 @@ def main():
     df_pca, pca_reducer = calc_pca(ad, n_components=n_components)
 
     # ------ Plot the data ------ #
-    fig, ax = plt.subplots(1,1,figsize=(6,6))
-    sns.scatterplot(x="PC1", y="PC2", hue="label_vf", style="label_RF", data=df_pca, ax=ax)
+    os.makedirs("../data/pca_results", exist_ok=True)
+    fig, ax = plt.subplots(1, 1, figsize=(6, 6))
+    sns.scatterplot(x="PC 1", y="PC 2", hue="label_vf", style="label_RF", data=df_pca, ax=ax)
     ax.set_xlabel("PC 1")
     ax.set_ylabel("PC 2")
-    ax.set_title("PCA of Persistence Images")
+    ax.set_title("PCA of Persistence Images ({} {})".format(phase, dim))
     plt.legend(loc='upper right')
     plt.tight_layout()
-    plt.savefig("path/to/the/folder/where/the/PCA/plot/is/saved/PCA_{}_{}_{}.png".format(phase, dim, n_components))
-    plt.show()
+    plt.savefig("../data/pca_results/PCA_{}_{}.png".format(phase, dim))
+    plt.close()
+    print("Saved PCA plot!")
 
     # Save the PCA object
-    with open("path/to/the/folder/where/the/PCA/object/is/saved/pca_reducer_{}_{}.pkl".format(phase, dim), "wb") as f:
+    with open("../data/pca_results/pca_reducer_{}_{}.pkl".format(phase, dim), "wb") as f:
         pickle.dump(pca_reducer, f)
+    print("Done!")
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as e:
+        import traceback
+        import sys
+        traceback.print_exc(file=sys.stdout)
+    else:
+        print("Finished successfully!")

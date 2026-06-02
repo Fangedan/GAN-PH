@@ -85,8 +85,8 @@ def get_pis(header, out_header, label_RF, label_vf, max_dim=3, x_range=(-18.5,18
 
 def main():
     print("Starting 2_PI.py...")
-    header_pd = "../data/persistent_diagram/phase_Ni"
-    header_pi = "../data/persistent_images/phase_Ni"
+    header_pd = "../data/persistent_diagram/phase_Pore"
+    header_pi = "../data/persistent_images/phase_Pore"
 
     df_pi = get_pis(
         header_pd,
@@ -108,4 +108,7 @@ if __name__ == "__main__":
         main()
     except Exception as e:
         import traceback
-        traceback.print_exc()
+        print("ERROR:", e)
+        traceback.print_exc(file=sys.stdout)
+    else:
+        print("Finished successfully!")
