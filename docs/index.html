@@ -223,8 +223,23 @@ function makeParticle(type, seed) {
   else                      pool = poreVox; // h2 or h2o
 
   // Pick two random voxels in the correct phase to travel between
-  const sv = pickRnd(pool, seed * 7 + 1);
-  const ev = pickRnd(pool, seed * 13 + 5);
+  const byX = [...pool].sort((a, b) => a.x - b.x);
+  const n = byX.length;
+  const third = Math.floor(n / 3);
+  const leftPool  = byX.slice(0, third);
+  const rightPool = byX.slice(n - third);
+
+  let sv, ev;
+  if (type === 'electron') {
+    sv = pickRnd(mode === 'fc' ? leftPool : rightPool, seed * 7 + 1);
+    ev = pickRnd(mode === 'fc' ? rightPool : leftPool, seed * 13 + 5);
+  } else if (type === 'ion') {
+    sv = pickRnd(mode === 'fc' ? rightPool : leftPool, seed * 7 + 1);
+    ev = pickRnd(mode === 'fc' ? leftPool : rightPool, seed * 13 + 5);
+  } else {
+    sv = pickRnd(mode === 'fc' ? leftPool : rightPool, seed * 7 + 1);
+    ev = pickRnd(mode === 'fc' ? rightPool : leftPool, seed * 13 + 5);
+  }
   return {
     type,
     sx: sv.sc[0], sy: sv.sc[1],
