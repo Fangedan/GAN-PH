@@ -102,9 +102,11 @@ for (let xi = 0; xi < GS; xi++) {
       const dx = xi - MID, dy = yi - MID, dz = zi - MID;
       const d = Math.sqrt(dx*dx + dy*dy + dz*dz);
       let ph;
-      if      (d < R_NI)  ph = 'ni';
-      else if (d < R_YSZ) ph = 'ysz';
-      else                ph = 'pore';
+      const noise = rng(xi * 173 + yi * 97 + zi * 31 + 7) * 1.8 - 0.9;
+      const dn = d + noise;
+      if      (dn < R_NI)  ph = 'ni';
+      else if (dn < R_YSZ) ph = 'ysz';
+      else                 ph = 'pore';
       vox.push({ xi, yi, zi, ph });
     }
   }
@@ -150,9 +152,9 @@ function drawVox(v) {
     left  = 'rgba(18,130,55,0.90)';
     right = 'rgba(12, 95,38,0.90)';
   } else if (v.ph === 'ysz') {
-    top   = 'rgba(234,179,8,0.82)';
-    left  = 'rgba(160,120,5,0.82)';
-    right = 'rgba(115, 85,3,0.82)';
+    top   = 'rgba(234,179,8,0.55)';
+    left  = 'rgba(160,120,5,0.55)';
+    right = 'rgba(115, 85,3,0.55)';
   } else {
     // Pore — very transparent so structure beneath shows through
     top   = 'rgba(71,85,105,0.15)';
