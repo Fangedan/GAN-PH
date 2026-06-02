@@ -65,7 +65,7 @@ class LoadStructure:
         """
 
         strucs = []
-        for i in trange(self.n_struc):
+        for i in tqdm(range(self.n_struc)):
             imgs = np.zeros([n_size,n_size,n_size]).astype(np.float32)
 
             for j in range(n_size):
@@ -177,4 +177,7 @@ def saving_PD(header, out_folder, n_struc = 300):
 def main():
     header = "../synthetic_data"  # path to the structure data
     out_folder = "../data/persistent_diagram"  # path to save the persistent diagram
-    saving_PD(header, out_folder, n_struc = 300)
+    saving_PD(header, out_folder, n_struc = 50)
+
+if __name__ == "__main__":
+    main()

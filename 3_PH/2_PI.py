@@ -84,16 +84,15 @@ def get_pis(header, out_header, label_RF, label_vf, max_dim=3, x_range=(-18.5,18
     return pi_dfs
 
 def main():
-
-    header_pd = "path/to/persistence_diagrams"  # path to the persistence diagrams
-    header_pi = "path/to/persistence_images"    # path to save the persistence images
+    header_pd = "../data/persistent_diagram/phase_Ni"
+    header_pi = "../data/persistent_images/phase_Ni"
 
     df_pi = get_pis(
-        header_pd, 
-        header_pi, 
-        label_RF="label_RF",  # label for real or fake, you can change it to any label you want
-        label_vf="label_vf",  # label for volume fraction, you can change it to any label you want
-        max_dim=3, 
+        header_pd,
+        header_pi,
+        label_RF="real",
+        label_vf="Ni",
+        max_dim=3,
         x_range=(-18.5,18.5)
     )
 
@@ -102,3 +101,6 @@ def main():
 
         with open(os.path.join(header_pi, "P_images_{}.pkl".format(key)), "wb") as f:
             pickle.dump(df_pi[key], f)
+
+if __name__ == "__main__":
+    main()
