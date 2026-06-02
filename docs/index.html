@@ -116,7 +116,7 @@ for (let x = 0; x < GS; x++) {
       const r2 = rng(x*211 + y*157 + z*71 + 2);
       let ph;
       if (d < 4.5) ph = 'ni';
-      else if (d < 6.5) ph = 'ysz';
+      else if (d < 5.5) ph = 'ysz';
       else ph = 'pore';
       vox.push({x, y, z, ph});
     }
@@ -223,11 +223,8 @@ function makeParticle(type, seed) {
   else                      pool = poreVox; // h2 or h2o
 
   // Pick two random voxels in the correct phase to travel between
-  const poolSorted = [...pool].sort((a, b) => a.x - b.x);
-  const leftHalf  = poolSorted.slice(0, Math.floor(poolSorted.length / 2));
-  const rightHalf = poolSorted.slice(Math.floor(poolSorted.length / 2));
-  const sv = pickRnd(mode === 'fc' ? leftHalf  : rightHalf, seed * 7 + 1);
-  const ev = pickRnd(mode === 'fc' ? rightHalf : leftHalf,  seed * 13 + 5);
+  const sv = pickRnd(pool, seed * 7 + 1);
+  const ev = pickRnd(pool, seed * 13 + 5);
   return {
     type,
     sx: sv.sc[0], sy: sv.sc[1],
