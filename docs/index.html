@@ -7,7 +7,7 @@
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0d1f35;color:#e2e8f0;min-height:100vh;display:flex;justify-content:center;padding:24px 16px}
-#outer{width:100%;max-width:900px}
+#outer{width:100%;max-width:960px}
 h1{font-size:20px;font-weight:600;color:#e2e8f0;margin-bottom:4px}
 .sub{font-size:13px;color:#64748b;margin-bottom:18px}
 .mode-row{display:flex;gap:8px;margin-bottom:12px}
@@ -17,7 +17,7 @@ h1{font-size:20px;font-weight:600;color:#e2e8f0;margin-bottom:4px}
 .ctrl{flex:1;background:#1e293b;border-radius:8px;padding:10px 14px}
 .clbl{font-size:11px;color:#64748b;margin-bottom:6px}
 .crow{display:flex;align-items:center;gap:8px}
-.crow input[type=range]{flex:1;accent-color:#0284c7;height:4px}
+.crow input[type=range]{flex:1;accent-color:#0284c7}
 .cval{font-size:13px;font-weight:500;color:#e2e8f0;min-width:30px}
 .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}
 .stat{background:#1e293b;border-radius:8px;padding:10px;text-align:center}
@@ -29,7 +29,7 @@ h1{font-size:20px;font-weight:600;color:#e2e8f0;margin-bottom:4px}
 .ld{width:11px;height:11px;border-radius:2px;flex-shrink:0}
 #cw{width:100%;border-radius:10px;overflow:hidden;background:#0a1628;border:1px solid #1e293b}
 canvas{width:100%;height:auto;display:block}
-.rxn{font-size:11px;color:#475569;text-align:center;margin-top:8px;font-style:italic;line-height:1.5}
+.rxn{font-size:11px;color:#475569;text-align:center;margin-top:8px;font-style:italic;line-height:1.6}
 .foot{margin-top:16px;font-size:11px;color:#334155;text-align:center}
 .foot a{color:#38bdf8;text-decoration:none}
 </style>
@@ -37,13 +37,11 @@ canvas{width:100%;height:auto;display:block}
 <body>
 <div id="outer">
   <h1>SOC Electrode Microstructure — Interactive Simulation</h1>
-  <p class="sub">3D voxel visualization of the electrochemical process in a Ni-YSZ solid oxide cell electrode. Each particle travels through its correct phase.</p>
-
+  <p class="sub">3D voxel visualization of the electrochemical process in a Ni-YSZ solid oxide cell electrode. Particles travel through their correct phase toward the Triple Phase Boundary.</p>
   <div class="mode-row">
     <button class="mbtn active" id="bfc" onclick="setMode('fc')">⚡ Fuel cell — H₂ → electricity</button>
     <button class="mbtn" id="bel" onclick="setMode('el')">💧 Electrolysis — electricity → H₂</button>
   </div>
-
   <div class="ctrls">
     <div class="ctrl">
       <div class="clbl" id="lbl">H₂ input flow</div>
@@ -54,13 +52,11 @@ canvas{width:100%;height:auto;display:block}
       <div class="crow"><input type="range" min="1" max="5" value="2" id="ssp" step="1" oninput="onSlide()"><span class="cval" id="vsp">2×</span></div>
     </div>
   </div>
-
   <div class="stats">
     <div class="stat"><div class="sl">Power output</div><div class="sv" id="spow">168</div><div class="su">mW/cm²</div></div>
     <div class="stat"><div class="sl" id="shl">H₂ consumed</div><div class="sv" id="sh2r">25</div><div class="su">mL/min</div></div>
     <div class="stat"><div class="sl">TPB activity</div><div class="sv" id="stpb">66</div><div class="su">% active</div></div>
   </div>
-
   <div class="leg">
     <div class="li"><div class="ld" style="background:#22c55e"></div>Ni — conducts electrons</div>
     <div class="li"><div class="ld" style="background:#eab308"></div>YSZ — conducts O²⁻ ions</div>
@@ -69,211 +65,339 @@ canvas{width:100%;height:auto;display:block}
     <div class="li"><div class="ld" style="background:#fb923c;border-radius:50%"></div>O²⁻ ions (via YSZ)</div>
     <div class="li"><div class="ld" style="background:#fde047;border-radius:50%"></div>Electrons (via Ni)</div>
   </div>
-
   <div id="cw"><canvas id="c"></canvas></div>
-
-  <p class="rxn" id="rxn">
-    H₂ → 2H⁺ + 2e⁻ at Triple Phase Boundary &nbsp;·&nbsp; electrons travel through Ni network to external circuit &nbsp;·&nbsp; O²⁻ ions hop through YSZ ceramic &nbsp;·&nbsp; gas diffuses through pore channels
-  </p>
-
-  <p class="foot">
-    Part of the <a href="https://github.com/Fangedan/GAN-PH">GAN-PH project</a> —
-    Conditional Wasserstein GAN for SOC electrode microstructure generation · UTD Lab
-  </p>
+  <p class="rxn" id="rxn">H₂ → 2H⁺ + 2e⁻ at Triple Phase Boundary &nbsp;·&nbsp; electrons travel through Ni to external circuit &nbsp;·&nbsp; O²⁻ ions hop through YSZ &nbsp;·&nbsp; gas diffuses through pore channels</p>
+  <p class="foot">Part of the <a href="https://github.com/Fangedan/GAN-PH">GAN-PH project</a> — Conditional Wasserstein GAN for SOC electrode microstructure generation · UTD Lab</p>
 </div>
 
 <script>
 const CV = document.getElementById('c');
 const ctx = CV.getContext('2d');
-
-// Internal resolution — high so it looks crisp when CSS scales it
-const W = 800, H = 520;
+const W = 860, H = 560;
 CV.width = W; CV.height = H;
 
 let mode = 'fc', h2 = 60, spd = 2;
 
-// ── Deterministic RNG ──────────────────────────────────────────────────────
+// ── RNG ────────────────────────────────────────────────────────────────────
 function rng(s) {
   let x = Math.sin(s * 127.1 + 311.7) * 43758.5453;
   return x - Math.floor(x);
 }
 
-// ── Build voxel grid ───────────────────────────────────────────────────────
-// True 3D cube: GS×GS×GS voxels
-// Phase assignment: inner sphere = Ni, middle shell = YSZ, outer = pore
-const GS = 12;
+// ── Voxel grid ─────────────────────────────────────────────────────────────
+// GS x GS x GS cube. Three concentric shells:
+//   inner (d < R_NI)          → Ni   (green)
+//   middle (R_NI <= d < R_YSZ) → YSZ  (gold)
+//   outer  (d >= R_YSZ)        → Pore (dark)
+const GS = 11;
+const R_NI  = 3.2;   // radius of Ni core
+const R_YSZ = 4.5;   // outer radius of YSZ shell
+// centre of the grid
+const MID = (GS - 1) / 2;  // = 5.0
+
 const vox = [];
-for (let x = 0; x < GS; x++) {
-  for (let y = 0; y < GS; y++) {
-    for (let z = 0; z < GS; z++) {
-      const cx = x - (GS-1)/2;
-      const cy = y - (GS-1)/2;
-      const cz = z - (GS-1)/2;
-      const d = Math.sqrt(cx*cx + cy*cy + cz*cz);
-      const maxD = (GS-1)/2 * Math.sqrt(3);
-      // Normalised distance 0..1
-      const r1 = rng(x*173 + y*97 + z*31 + 1);
-      const r2 = rng(x*211 + y*157 + z*71 + 2);
+for (let xi = 0; xi < GS; xi++) {
+  for (let yi = 0; yi < GS; yi++) {
+    for (let zi = 0; zi < GS; zi++) {
+      const dx = xi - MID, dy = yi - MID, dz = zi - MID;
+      const d = Math.sqrt(dx*dx + dy*dy + dz*dz);
       let ph;
-      if (d < 4.5) ph = 'ni';
-      else if (d < 5.5) ph = 'ysz';
-      else ph = 'pore';
-      vox.push({x, y, z, ph});
+      if      (d < R_NI)  ph = 'ni';
+      else if (d < R_YSZ) ph = 'ysz';
+      else                ph = 'pore';
+      vox.push({ xi, yi, zi, ph });
     }
   }
 }
 
-const niVox   = vox.filter(v => v.ph === 'ni');
-const yszVox  = vox.filter(v => v.ph === 'ysz');
-const poreVox = vox.filter(v => v.ph === 'pore');
+// Separate phase pools — these are never mutated
+const niPool   = vox.filter(v => v.ph === 'ni');
+const yszPool  = vox.filter(v => v.ph === 'ysz');
+const porePool = vox.filter(v => v.ph === 'pore');
 
 // ── Isometric projection ───────────────────────────────────────────────────
-// True isometric: x→right-down, y→up, z→left-down
-// cx,cy = centre of canvas
-const ISO_SCALE = 22;
-const CX = W / 2;
-const CY = H / 2 + 30;
+// Canvas origin for the structure — centred horizontally, slightly above centre
+const ISO  = 28;          // scale (px per voxel unit)
+const CX   = W / 2;
+const CY   = H / 2 + 20;
 
-function iso(x, y, z) {
-  // Standard isometric formulas
-  const px = CX + (x - z) * ISO_SCALE * Math.cos(Math.PI/6);
-  const py = CY - y * ISO_SCALE + (x + z) * ISO_SCALE * Math.sin(Math.PI/6);
+// Standard isometric: x→right, z→left, y→up
+function iso(xi, yi, zi) {
+  const px = CX + (xi - zi) * ISO * 0.866;
+  const py = CY - yi * ISO + (xi + zi) * ISO * 0.5;
   return [px, py];
 }
 
-// Precompute screen centres for each voxel
-vox.forEach(v => { v.sc = iso(v.x, v.y, v.z); });
-niVox.forEach(v  => { v.sc = v.sc || iso(v.x, v.y, v.z); });
-yszVox.forEach(v => { v.sc = v.sc || iso(v.x, v.y, v.z); });
-poreVox.forEach(v=> { v.sc = v.sc || iso(v.x, v.y, v.z); });
+// Store screen centre on every voxel once
+vox.forEach(v => { v.sc = iso(v.xi, v.yi, v.zi); });
 
-// Painter's sort: back-to-front for isometric
-const sorted = [...vox].sort((a, b) => {
-  // Depth = x + z - y  (smaller = further back in standard iso)
-  return (a.x + a.z - a.y) - (b.x + b.z - b.y);
-});
+// Painter's sort: render back-to-front
+// For standard iso the depth key is xi + zi - yi (ascending = back first)
+const sorted = [...vox].sort((a, b) =>
+  (a.xi + a.zi - a.yi) - (b.xi + b.zi - b.yi)
+);
 
-// ── Draw a single isometric voxel cube ────────────────────────────────────
+// ── Draw one voxel cube ────────────────────────────────────────────────────
 function drawVox(v) {
   const [px, py] = v.sc;
-  const s = ISO_SCALE * 0.98; // slight gap between voxels
-  // 6 points of the top face diamond
-  // cos30 ≈ 0.866, sin30 = 0.5
-  const c = s * 0.866;
-  const h = s * 0.5;
+  const s = ISO * 0.97;      // tiny gap between cubes
+  const c = s * 0.866;       // horizontal half-width  (cos 30°)
+  const h = s * 0.5;         // vertical half-height   (sin 30°)
 
-  let topC, leftC, rightC;
+  let top, left, right;
   if (v.ph === 'ni') {
-    topC   = 'rgba(34,197,94,0.85)';
-    leftC  = 'rgba(20,130,58,0.85)';
-    rightC = 'rgba(14,100,42,0.85)';
+    top   = 'rgba(34,197,94,0.90)';
+    left  = 'rgba(18,130,55,0.90)';
+    right = 'rgba(12, 95,38,0.90)';
   } else if (v.ph === 'ysz') {
-    topC   = 'rgba(234,179,8,0.78)';
-    leftC  = 'rgba(160,120,5,0.78)';
-    rightC = 'rgba(120,88,4,0.78)';
+    top   = 'rgba(234,179,8,0.82)';
+    left  = 'rgba(160,120,5,0.82)';
+    right = 'rgba(115, 85,3,0.82)';
   } else {
-    // Pores: very faint so you can see through
-    topC   = 'rgba(71,85,105,0.18)';
-    leftC  = 'rgba(51,65,85,0.14)';
-    rightC = 'rgba(40,55,75,0.14)';
+    // Pore — very transparent so structure beneath shows through
+    top   = 'rgba(71,85,105,0.15)';
+    left  = 'rgba(51,65, 85,0.12)';
+    right = 'rgba(38,52, 72,0.12)';
   }
 
-  // Top face
+  // Top diamond face
   ctx.beginPath();
-  ctx.moveTo(px,    py - s);
-  ctx.lineTo(px+c,  py - h);
-  ctx.lineTo(px,    py);
-  ctx.lineTo(px-c,  py - h);
+  ctx.moveTo(px,     py - s);
+  ctx.lineTo(px + c, py - h);
+  ctx.lineTo(px,     py    );
+  ctx.lineTo(px - c, py - h);
   ctx.closePath();
-  ctx.fillStyle = topC;
-  ctx.fill();
+  ctx.fillStyle = top; ctx.fill();
 
-  // Left face
+  // Left face (drops down-left from top-left and bottom)
   ctx.beginPath();
-  ctx.moveTo(px-c, py - h);
-  ctx.lineTo(px,   py);
-  ctx.lineTo(px,   py + s);
-  ctx.lineTo(px-c, py + h);
+  ctx.moveTo(px - c, py - h);
+  ctx.lineTo(px,     py    );
+  ctx.lineTo(px,     py + s);
+  ctx.lineTo(px - c, py + h);
   ctx.closePath();
-  ctx.fillStyle = leftC;
-  ctx.fill();
+  ctx.fillStyle = left; ctx.fill();
 
-  // Right face
+  // Right face (drops down-right)
   ctx.beginPath();
-  ctx.moveTo(px+c, py - h);
-  ctx.lineTo(px,   py);
-  ctx.lineTo(px,   py + s);
-  ctx.lineTo(px+c, py + h);
+  ctx.moveTo(px + c, py - h);
+  ctx.lineTo(px,     py    );
+  ctx.lineTo(px,     py + s);
+  ctx.lineTo(px + c, py + h);
   ctx.closePath();
-  ctx.fillStyle = rightC;
-  ctx.fill();
+  ctx.fillStyle = right; ctx.fill();
 }
 
 // ── Particles ──────────────────────────────────────────────────────────────
+// Particles travel directionally LEFT → RIGHT on screen (fuel cell mode).
+// We split each phase pool into left-half / right-half by screen x position,
+// then route start → end accordingly. No sorting — just filtering.
+
+function screenX(v) { return v.sc[0]; }
+
+// Build left/right halves for each pool by screen-x median
+function splitPool(pool) {
+  const mid = pool.reduce((s, v) => s + screenX(v), 0) / pool.length;
+  return {
+    left:  pool.filter(v => screenX(v) <= mid),
+    right: pool.filter(v => screenX(v) >  mid),
+  };
+}
+
+// Pre-compute splits (these never change)
+const niSplit   = splitPool(niPool);
+const yszSplit  = splitPool(yszPool);
+const poreSplit = splitPool(porePool);
+
 function pickRnd(arr, seed) {
+  if (!arr || arr.length === 0) return null;
   return arr[Math.floor(rng(seed) * arr.length)];
 }
 
-const particles = [];
-
 function makeParticle(type, seed) {
-  let pool;
-  if (type === 'electron') pool = niVox;
-  else if (type === 'ion')  pool = yszVox;
-  else                      pool = poreVox; // h2 or h2o
+  // Choose which split to use
+  let split;
+  if      (type === 'electron') split = niSplit;
+  else if (type === 'ion')      split = yszSplit;
+  else                          split = poreSplit;
 
-  // Pick two random voxels in the correct phase to travel between
-  const byX = [...pool].sort((a, b) => a.x - b.x);
-  const n = byX.length;
-  const third = Math.floor(n / 3);
-  const leftPool  = byX.slice(0, third);
-  const rightPool = byX.slice(n - third);
-
-  let sv, ev;
-  if (type === 'electron') {
-    sv = pickRnd(mode === 'fc' ? leftPool : rightPool, seed * 7 + 1);
-    ev = pickRnd(mode === 'fc' ? rightPool : leftPool, seed * 13 + 5);
-  } else if (type === 'ion') {
-    sv = pickRnd(mode === 'fc' ? rightPool : leftPool, seed * 7 + 1);
-    ev = pickRnd(mode === 'fc' ? leftPool : rightPool, seed * 13 + 5);
+  // In fuel cell mode:
+  //   H2 + electrons: left → right  (H2 enters, electrons exit to circuit)
+  //   ions:           right → left  (O2- travels back through YSZ)
+  // Reversed in electrolysis mode.
+  let fromPool, toPool;
+  if (mode === 'fc') {
+    fromPool = (type === 'ion') ? split.right : split.left;
+    toPool   = (type === 'ion') ? split.left  : split.right;
   } else {
-    sv = pickRnd(mode === 'fc' ? leftPool : rightPool, seed * 7 + 1);
-    ev = pickRnd(mode === 'fc' ? rightPool : leftPool, seed * 13 + 5);
+    fromPool = (type === 'ion') ? split.left  : split.right;
+    toPool   = (type === 'ion') ? split.right : split.left;
   }
+
+  // Fallback if a half is empty
+  if (!fromPool || fromPool.length === 0) fromPool = (split.left.length ? split.left : split.right);
+  if (!toPool   || toPool.length   === 0) toPool   = (split.right.length ? split.right : split.left);
+
+  const sv = pickRnd(fromPool, seed * 7  + 1);
+  const ev = pickRnd(toPool,   seed * 13 + 5);
+  if (!sv || !ev) return null;
+
   return {
     type,
     sx: sv.sc[0], sy: sv.sc[1],
     ex: ev.sc[0], ey: ev.sc[1],
     t: Math.random(),
-    speed: type === 'electron' ? 0.012 + Math.random() * 0.008
-                               : 0.006 + Math.random() * 0.004,
+    speed: type === 'electron' ? 0.010 + Math.random() * 0.006
+                               : 0.005 + Math.random() * 0.004,
   };
 }
 
+const particles = [];
+
 function buildParticles() {
   particles.length = 0;
-  const n = Math.floor(h2 * 0.55) + 12;
+  const n = Math.floor(h2 * 0.50) + 10;
   for (let i = 0; i < n; i++) {
-    // Roughly equal split of all three types
-    const r = rng(i * 41 + mode.charCodeAt(0));
+    const r = rng(i * 41 + mode.charCodeAt(0) * 3);
     let type;
-    if (r < 0.34)       type = mode === 'fc' ? 'h2' : 'h2o';
-    else if (r < 0.67)  type = 'electron';
-    else                type = 'ion';
-    particles.push(makeParticle(type, i * 17 + 3));
+    if      (r < 0.34) type = mode === 'fc' ? 'h2' : 'h2o';
+    else if (r < 0.67) type = 'electron';
+    else               type = 'ion';
+    const p = makeParticle(type, i * 17 + 3);
+    if (p) particles.push(p);
   }
 }
 
 function particlePos(p) {
-  // Smooth arc between start and end
-  const t = p.t;
+  const t  = p.t;
   const mx = (p.sx + p.ex) / 2;
-  const my = (p.sy + p.ey) / 2 - 18; // slight arc
-  // Quadratic bezier
+  const my = (p.sy + p.ey) / 2 - 15;  // gentle arc upward
   const it = 1 - t;
-  const px = it*it*p.sx + 2*it*t*mx + t*t*p.ex;
-  const py = it*it*p.sy + 2*it*t*my + t*t*p.ey;
-  return [px, py];
+  return [
+    it*it*p.sx + 2*it*t*mx + t*t*p.ex,
+    it*it*p.sy + 2*it*t*my + t*t*p.ey,
+  ];
+}
+
+// ── Annotation helpers ─────────────────────────────────────────────────────
+function arrow(x1, y1, x2, y2, col) {
+  const dx = x2 - x1, dy = y2 - y1;
+  const len = Math.sqrt(dx*dx + dy*dy);
+  const ux = dx/len, uy = dy/len;
+  const hx = x2 - ux*10, hy = y2 - uy*10;
+
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(x2, y2);
+  ctx.strokeStyle = col;
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([4, 3]);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Arrowhead
+  const angle = Math.atan2(dy, dx);
+  ctx.beginPath();
+  ctx.moveTo(x2, y2);
+  ctx.lineTo(x2 - 10*Math.cos(angle - 0.4), y2 - 10*Math.sin(angle - 0.4));
+  ctx.lineTo(x2 - 10*Math.cos(angle + 0.4), y2 - 10*Math.sin(angle + 0.4));
+  ctx.closePath();
+  ctx.fillStyle = col;
+  ctx.fill();
+}
+
+function label(text, x, y, col, align) {
+  ctx.font = 'bold 11px sans-serif';
+  ctx.fillStyle = col;
+  ctx.textAlign = align || 'left';
+  ctx.fillText(text, x, y);
+  ctx.textAlign = 'left';
+}
+
+function pill(text, x, y, col) {
+  ctx.font = '11px sans-serif';
+  const tw = ctx.measureText(text).width;
+  const pad = 6;
+  ctx.fillStyle = col + '33';
+  const rx = x - pad, ry = y - 13, rw = tw + pad*2, rh = 18;
+  ctx.beginPath();
+  ctx.roundRect(rx, ry, rw, rh, 4);
+  ctx.fill();
+  ctx.fillStyle = col;
+  ctx.textAlign = 'left';
+  ctx.fillText(text, x, y);
+}
+
+// ── Draw annotations ───────────────────────────────────────────────────────
+function drawAnnotations() {
+  // Left side: H2 enters (fuel cell) or H2O enters (electrolysis)
+  const leftX  = 38;
+  const rightX = W - 38;
+  const midY   = CY;
+
+  if (mode === 'fc') {
+    // H2 in arrow — left side, pointing right into structure
+    arrow(leftX, midY - 60, leftX + 55, midY - 60, '#38bdf8');
+    pill('H₂ in', leftX + 2, midY - 64, '#38bdf8');
+
+    // Electrons out — left side, pointing right (they exit to external circuit on right)
+    arrow(leftX, midY + 10, leftX + 55, midY + 10, '#fde047');
+    pill('e⁻ flow →', leftX + 2, midY + 6, '#fde047');
+
+    // H2O out — right side
+    arrow(rightX - 55, midY - 60, rightX, midY - 60, '#a78bfa');
+    pill('H₂O out', rightX - 52, midY - 64, '#a78bfa');
+
+    // External circuit — right side
+    arrow(rightX - 55, midY + 10, rightX, midY + 10, '#fde047');
+    pill('→ circuit', rightX - 52, midY + 6, '#fde047');
+
+    // O2- arrow — right to left through YSZ
+    arrow(rightX, midY + 70, rightX - 55, midY + 70, '#fb923c');
+    label('O²⁻ via YSZ', rightX - 52, midY + 66, '#fb923c', 'left');
+
+    // TPB label in centre
+    label('⬡ TPB', CX - 15, CY - 5, 'rgba(255,255,255,0.35)', 'center');
+
+  } else {
+    // Electrolysis: reversed flows
+    arrow(rightX - 55, midY - 60, rightX, midY - 60, '#38bdf8');
+    pill('H₂ out', rightX - 52, midY - 64, '#38bdf8');
+
+    arrow(rightX - 55, midY + 10, rightX, midY + 10, '#fde047');
+    pill('e⁻ in ←', rightX - 52, midY + 6, '#fde047');
+
+    arrow(leftX, midY - 60, leftX + 55, midY - 60, '#a78bfa');
+    pill('H₂O in', leftX + 2, midY - 64, '#a78bfa');
+
+    arrow(leftX + 55, midY + 10, leftX, midY + 10, '#fde047');
+    pill('← circuit', leftX + 2, midY + 6, '#fde047');
+
+    arrow(rightX - 55, midY + 70, rightX, midY + 70, '#fb923c');
+    label('O²⁻ via YSZ', rightX - 52, midY + 66, '#fb923c', 'left');
+
+    label('⬡ TPB', CX - 15, CY - 5, 'rgba(255,255,255,0.35)', 'center');
+  }
+
+  // Phase labels on the structure itself
+  // Ni label — points to centre of structure
+  arrow(CX - 120, CY - 150, CX - 30, CY - 60, '#22c55e');
+  label('Ni core', CX - 165, CY - 153, '#22c55e', 'left');
+
+  // YSZ label
+  arrow(CX + 130, CY - 100, CX + 55, CY - 45, '#eab308');
+  label('YSZ shell', CX + 133, CY - 103, '#eab308', 'left');
+
+  // Pore label
+  arrow(CX - 150, CY + 80, CX - 70, CY + 50, '#94a3b8');
+  label('Pore channels', CX - 205, CY + 83, '#94a3b8', 'left');
+
+  // Bottom credit
+  ctx.font = '10px sans-serif';
+  ctx.fillStyle = 'rgba(255,255,255,0.18)';
+  ctx.textAlign = 'center';
+  ctx.fillText('Triple Phase Boundary (TPB) — where Ni, YSZ, and pore meet: site of all electrochemical reactions', W/2, H - 8);
+  ctx.textAlign = 'left';
 }
 
 // ── Render loop ────────────────────────────────────────────────────────────
@@ -285,51 +409,37 @@ function draw() {
   ctx.fillStyle = '#0a1628';
   ctx.fillRect(0, 0, W, H);
 
-  // Draw voxels back-to-front
+  // Draw structure back-to-front
   for (const v of sorted) drawVox(v);
 
-  // Advance and draw particles
+  // Draw particles
   for (const p of particles) {
     p.t += p.speed * spd * 0.5;
     if (p.t >= 1) {
-      // Respawn in correct phase
       const np = makeParticle(p.type, frame * 7 + Math.random() * 500);
-      p.sx = np.sx; p.sy = np.sy;
-      p.ex = np.ex; p.ey = np.ey;
-      p.t = 0; p.speed = np.speed;
+      if (np) { p.sx=np.sx; p.sy=np.sy; p.ex=np.ex; p.ey=np.ey; p.t=0; p.speed=np.speed; }
+      else p.t = 0;
     }
-
     const [px, py] = particlePos(p);
+    const col    = p.type==='electron' ? '#fde047' : p.type==='ion' ? '#fb923c' : '#38bdf8';
+    const radius = p.type==='electron' ? 3 : 3.5;
 
-    let col, radius;
-    if (p.type === 'electron')        { col = '#fde047'; radius = 3; }
-    else if (p.type === 'ion')        { col = '#fb923c'; radius = 3.5; }
-    else                              { col = '#38bdf8'; radius = 3.5; }
-
-    // Glow
     ctx.beginPath();
-    ctx.arc(px, py, radius + 4, 0, Math.PI * 2);
-    ctx.fillStyle = col + '28';
-    ctx.fill();
+    ctx.arc(px, py, radius + 4, 0, Math.PI*2);
+    ctx.fillStyle = col + '28'; ctx.fill();
 
-    // Core dot
     ctx.beginPath();
-    ctx.arc(px, py, radius, 0, Math.PI * 2);
-    ctx.fillStyle = col;
-    ctx.fill();
+    ctx.arc(px, py, radius, 0, Math.PI*2);
+    ctx.fillStyle = col; ctx.fill();
   }
 
-  // Label
-  ctx.font = '11px sans-serif';
-  ctx.fillStyle = 'rgba(255,255,255,0.25)';
-  ctx.textAlign = 'center';
-  ctx.fillText('Triple Phase Boundary — where Ni (green), YSZ (gold), and pore (dark) meet', W/2, H - 8);
-  ctx.textAlign = 'left';
+  // Draw annotations on top
+  drawAnnotations();
 
-  // Update stats
-  document.getElementById('spow').textContent  = mode === 'fc' ? Math.round(h2 * 2.8) : '—';
-  document.getElementById('sh2r').textContent  = Math.round(h2 * 0.42);
-  document.getElementById('stpb').textContent  = Math.round(Math.min(100, h2 * 1.1));
+  // Stats
+  document.getElementById('spow').textContent = mode==='fc' ? Math.round(h2*2.8) : '—';
+  document.getElementById('sh2r').textContent = Math.round(h2*0.42);
+  document.getElementById('stpb').textContent = Math.round(Math.min(100, h2*1.1));
 
   requestAnimationFrame(draw);
 }
@@ -337,21 +447,21 @@ function draw() {
 // ── Controls ───────────────────────────────────────────────────────────────
 function setMode(m) {
   mode = m;
-  document.getElementById('bfc').classList.toggle('active', m === 'fc');
-  document.getElementById('bel').classList.toggle('active', m === 'el');
-  document.getElementById('lbl').textContent   = m === 'fc' ? 'H₂ input flow' : 'Electrical power input';
-  document.getElementById('shl').textContent   = m === 'fc' ? 'H₂ consumed'   : 'H₂ produced';
-  document.getElementById('rxn').textContent   = m === 'fc'
+  document.getElementById('bfc').classList.toggle('active', m==='fc');
+  document.getElementById('bel').classList.toggle('active', m==='el');
+  document.getElementById('lbl').textContent = m==='fc' ? 'H₂ input flow' : 'Electrical power input';
+  document.getElementById('shl').textContent = m==='fc' ? 'H₂ consumed'   : 'H₂ produced';
+  document.getElementById('rxn').textContent = m==='fc'
     ? 'H₂ → 2H⁺ + 2e⁻ at Triple Phase Boundary · electrons travel through Ni to external circuit · O²⁻ ions hop through YSZ · gas diffuses through pores'
-    : 'H₂O + 2e⁻ → H₂ + O²⁻ at TPB · apply electricity to reverse the reaction · O²⁻ travels back through YSZ · H₂ exits through the pore network';
+    : 'H₂O + 2e⁻ → H₂ + O²⁻ at TPB · apply electricity to split water · O²⁻ travels through YSZ · H₂ exits through pore network';
   buildParticles();
 }
 
 function onSlide() {
   h2  = parseInt(document.getElementById('sh2').value);
   spd = parseInt(document.getElementById('ssp').value);
-  document.getElementById('vh2').textContent = h2 + '%';
-  document.getElementById('vsp').textContent = spd + '×';
+  document.getElementById('vh2').textContent = h2+'%';
+  document.getElementById('vsp').textContent = spd+'×';
   buildParticles();
 }
 
