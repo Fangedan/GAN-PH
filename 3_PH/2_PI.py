@@ -84,6 +84,7 @@ def get_pis(header, out_header, label_RF, label_vf, max_dim=3, x_range=(-18.5,18
     return pi_dfs
 
 def main():
+    print("Starting 2_PI.py...")
     header_pd = "../data/persistent_diagram/phase_Ni"
     header_pi = "../data/persistent_images/phase_Ni"
 
@@ -103,4 +104,8 @@ def main():
             pickle.dump(df_pi[key], f)
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
