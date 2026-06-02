@@ -1,3 +1,6 @@
+## Interactive Demo
+[Live SOC Electrode Simulation →](https://fangedan.github.io/GAN-PH)
+
 # Advanced 3D microstructure generation of solid oxide cell electrodes using conditional generative adversarial network and validation using non-intuitive topological characteristics
 
 This repository presents training a WGAN-gp model for generation of realistic 3D microstructure of SOCs electrodes and structural analysis based on Topological data analysis by applying Persistent homology. 

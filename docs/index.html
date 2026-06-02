@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SOC Electrode Simulation — GAN-PH</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0d1f35;color:#e2e8f0;padding:20px}
+h1{font-size:18px;font-weight:500;margin-bottom:4px;color:#e2e8f0}
+.subtitle{font-size:13px;color:#94a3b8;margin-bottom:16px}
+.top-bar{display:flex;gap:8px;margin-bottom:10px}
+.mode-btn{flex:1;padding:8px 0;font-size:13px;font-weight:500;border:1px solid #334155;border-radius:8px;background:#1e293b;color:#94a3b8;cursor:pointer}
+.mode-btn.active{background:#065A82;color:#fff;border-color:#065A82}
+.ctrl-row{display:flex;gap:12px;margin-bottom:10px}
+.ctrl{flex:1;background:#1e293b;border-radius:8px;padding:10px 14px}
+.ctrl-label{font-size:11px;color:#94a3b8;margin-bottom:6px}
+.ctrl-inner{display:flex;align-items:center;gap:8px}
+.ctrl-inner input[type=range]{flex:1;accent-color:#065A82}
+.ctrl-val{font-size:13px;font-weight:500;min-width:32px;color:#e2e8f0}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px}
+.stat{background:#1e293b;border-radius:8px;padding:10px 12px;text-align:center}
+.stat-l{font-size:11px;color:#94a3b8}
+.stat-v{font-size:20px;font-weight:500;color:#e2e8f0}
+.stat-u{font-size:10px;color:#94a3b8}
+.legend{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:10px}
+.leg{display:flex;align-items:center;gap:5px;font-size:12px;color:#94a3b8}
+.ldot{width:10px;height:10px;border-radius:2px;flex-shrink:0}
+#wrap{border-radius:10px;overflow:hidden;border:1px solid #1e293b}
+canvas{display:block}
+.rxn{font-size:11px;color:#64748b;text-align:center;margin-top:8px;font-style:italic}
+.footer{margin-top:20px;font-size:11px;color:#475569;text-align:center}
+.footer a{color:#38bdf8;text-decoration:none}
+</style>
+</head>
+<body>
+<h1>SOC Electrode Microstructure — Interactive Simulation</h1>
+<p class="subtitle">3D visualization of the electrochemical process in a Ni-YSZ solid oxide cell electrode. Particles travel through their correct phases.</p>
+
+<div class="top-bar">
+  <button class="mode-btn active" id="btn-fc" onclick="setMode('fc')">⚡ Fuel cell — H₂ → electricity</button>
+  <button class="mode-btn" id="btn-el" onclick="setMode('el')">💧 Electrolysis — electricity → H₂</button>
+</div>
+<div class="ctrl-row">
+  <div class="ctrl">
+    <div class="ctrl-label" id="lbl-inp">H₂ input flow</div>
+    <div class="ctrl-inner"><input type="range" min="10" max="100" value="60" id="sl-h2" step="1" oninput="onSlider()"><span class="ctrl-val" id="v-h2">60%</span></div>
+  </div>
+  <div class="ctrl">
+    <div class="ctrl-label">Speed</div>
+    <div class="ctrl-inner"><input type="range" min="1" max="5" value="2" id="sl-sp" step="1" oninput="onSlider()"><span class="ctrl-val" id="v-sp">2×</span></div>
+  </div>
+</div>
+<div class="stats">
+  <div class="stat"><div class="stat-l">Power output</div><div class="stat-v" id="s-pow">168</div><div class="stat-u">mW/cm²</div></div>
+  <div class="stat"><div class="stat-l" id="s-hl">H₂ consumed</div><div class="stat-v" id="s-h2r">25</div><div class="stat-u">mL/min</div></div>
+  <div class="stat"><div class="stat-l">TPB activity</div><div class="stat-v" id="s-tpb">66</div><div class="stat-u">% active</div></div>
+</div>
+<div class="legend">
+  <div class="leg"><div class="ldot" style="background:#16a34a;opacity:.8"></div>Ni — conducts electrons</div>
+  <div class="leg"><div class="ldot" style="background:#ca8a04;opacity:.8"></div>YSZ — conducts O²⁻ ions</div>
+  <div class="leg"><div class="ldot" style="background:#475569;opacity:.5"></div>Pore — gas channels</div>
+  <div class="leg"><div class="ldot" style="background:#38bdf8;border-radius:50%"></div>H₂ / H₂O molecules</div>
+  <div class="leg"><div class="ldot" style="background:#fb923c;border-radius:50%"></div>O²⁻ ions</div>
+  <div class="leg"><div class="ldot" style="background:#fde047;border-radius:50%"></div>Electrons</div>
+</div>
+<div id="wrap"><canvas id="c"></canvas></div>
+<div class="rxn" id="rxn">H₂ → 2H⁺ + 2e⁻ at TPB · electrons flow through Ni · O²⁻ flows through YSZ · pores carry gas to reaction sites</div>
+<div class="footer">
+  Part of the <a href="https://github.com/Fangedan/GAN-PH">GAN-PH project</a> — 
+  Conditional Wasserstein GAN for SOC electrode microstructure generation · UTD Lab
+</div>
+
+<script>
+const CV=document.getElementById('c');
+const ctx=CV.getContext('2d');
+const W=640,H=420;
+CV.width=W;CV.height=H;
+let mode='fc',h2=60,spd=2;
+function rng(s){let x=Math.sin(s+1)*9301+49297;return(x%233280)/233280;}
+const GS=16;
+const vox=[];
+for(let z=0;z<GS;z++)for(let y=0;y<GS;y++)for(let x=0;x<GS;x++){
+  const cx=x-7.5,cy=y-7.5,cz=z-7.5;
+  const d=Math.sqrt(cx*cx+cy*cy+cz*cz);
+  const r1=rng(x*1000+y*100+z*10);
+  const r2=rng(x*777+y*333+z*111+99);
+  let ph;
+  if(d<4.5&&r1<0.6)ph='ni';
+  else if(d<7&&r2<0.5)ph='ysz';
+  else ph='pore';
+  vox.push({x,y,z,ph});
+}
+const niC=vox.filter(v=>v.ph==='ni');
+const yszC=vox.filter(v=>v.ph==='ysz');
+const poreC=vox.filter(v=>v.ph==='pore');
+function project(x,y,z){
+  const cx=W/2-30,cy=H/2+40,sc=17;
+  return[cx+(x-z)*sc*0.7,cy+(x+z)*sc*0.3-y*sc*0.6];
+}
+function voxCenter(v){return project(v.x,v.y,v.z);}
+const niPts=niC.map(voxCenter);
+const yszPts=yszC.map(voxCenter);
+const porePts=poreC.map(voxCenter);
+function pickR(arr,seed){return arr[Math.floor(rng(seed)*arr.length)];}
+const particles=[];
+function makeP(type,seed){
+  if(type==='h2'){const s=pickR(porePts,seed*3),e=pickR(porePts,seed*7+11);return{type,start:s,end:e,pos:[...s],t:Math.random(),speed:0.004+Math.random()*0.003};}
+  if(type==='electron'){const s=pickR(niPts,seed*5+3),e=pickR(niPts,seed*11+7);return{type,start:s,end:e,pos:[...s],t:Math.random(),speed:0.007+Math.random()*0.005};}
+  const s=pickR(yszPts,seed*13+5),e=pickR(yszPts,seed*17+9);
+  return{type,start:s,end:e,pos:[...s],t:Math.random(),speed:0.005+Math.random()*0.003};
+}
+function buildP(){
+  particles.length=0;
+  const n=Math.floor(h2*0.5)+10;
+  for(let i=0;i<n;i++){
+    const r=rng(i*37+mode.charCodeAt(0));
+    particles.push(makeP(r<0.33?'h2':r<0.66?'electron':'ion',i));
+  }
+}
+function lerpPos(p){
+  const t=p.t,mx=(p.start[0]+p.end[0])/2,my=(p.start[1]+p.end[1])/2;
+  if(t<0.5){const lt=t*2;return[p.start[0]+(mx-p.start[0])*lt,p.start[1]+(my-p.start[1])*lt];}
+  const lt=(t-0.5)*2;return[mx+(p.end[0]-mx)*lt,my+(p.end[1]-my)*lt];
+}
+const sVox=[...vox].sort((a,b)=>(a.x+a.z+a.y)-(b.x+b.z+b.y));
+function drawVoxels(){
+  for(const v of sVox){
+    const[px,py]=project(v.x,v.y,v.z),s=8;
+    let tc,lc,rc;
+    if(v.ph==='ni'){tc='rgba(22,163,74,0.72)';lc='rgba(15,110,50,0.72)';rc='rgba(10,80,35,0.72)';}
+    else if(v.ph==='ysz'){tc='rgba(202,138,4,0.65)';lc='rgba(140,95,3,0.65)';rc='rgba(100,70,2,0.65)';}
+    else{tc='rgba(71,85,105,0.22)';lc='rgba(51,65,85,0.18)';rc='rgba(40,55,75,0.18)';}
+    ctx.beginPath();ctx.moveTo(px,py-s);ctx.lineTo(px+s*0.85,py-s*0.4);ctx.lineTo(px+s*0.85,py+s*0.4);ctx.lineTo(px,py+s);ctx.lineTo(px-s*0.85,py+s*0.4);ctx.lineTo(px-s*0.85,py-s*0.4);ctx.closePath();ctx.fillStyle=tc;ctx.fill();
+    ctx.beginPath();ctx.moveTo(px-s*0.85,py-s*0.4);ctx.lineTo(px,py-s);ctx.lineTo(px,py);ctx.lineTo(px-s*0.85,py+s*0.4);ctx.closePath();ctx.fillStyle=lc;ctx.fill();
+    ctx.beginPath();ctx.moveTo(px+s*0.85,py-s*0.4);ctx.lineTo(px,py-s);ctx.lineTo(px,py);ctx.lineTo(px+s*0.85,py+s*0.4);ctx.closePath();ctx.fillStyle=rc;ctx.fill();
+  }
+}
+let frame=0;
+function tick(){
+  frame++;
+  ctx.fillStyle='#0d1f35';ctx.fillRect(0,0,W,H);
+  drawVoxels();
+  for(const p of particles){
+    p.t+=p.speed*spd;
+    if(p.t>=1){const np=makeP(p.type,frame+Math.random()*1000);p.start=[...np.start];p.end=[...np.end];p.t=0;p.speed=np.speed;}
+    p.pos=lerpPos(p);
+  }
+  for(const p of particles){
+    const[px,py]=p.pos;
+    const col=p.type==='h2'?'#38bdf8':p.type==='electron'?'#fde047':'#fb923c';
+    const r=p.type==='electron'?2.5:3;
+    ctx.beginPath();ctx.arc(px,py,r+3,0,Math.PI*2);ctx.fillStyle=col+'33';ctx.fill();
+    ctx.beginPath();ctx.arc(px,py,r,0,Math.PI*2);ctx.fillStyle=col;ctx.fill();
+  }
+  ctx.font='11px sans-serif';ctx.fillStyle='rgba(255,255,255,0.35)';ctx.fillText('Triple Phase Boundary — where Ni, YSZ, and pore meet',W/2-120,H-8);
+  document.getElementById('s-pow').textContent=mode==='fc'?Math.round(h2*2.8):'—';
+  document.getElementById('s-h2r').textContent=Math.round(h2*0.42);
+  document.getElementById('s-tpb').textContent=Math.round(Math.min(100,h2*1.1));
+  requestAnimationFrame(tick);
+}
+function setMode(m){
+  mode=m;
+  document.getElementById('btn-fc').classList.toggle('active',m==='fc');
+  document.getElementById('btn-el').classList.toggle('active',m==='el');
+  document.getElementById('lbl-inp').textContent=m==='fc'?'H₂ input flow':'Electrical power input';
+  document.getElementById('s-hl').textContent=m==='fc'?'H₂ consumed':'H₂ produced';
+  document.getElementById('rxn').textContent=m==='fc'
+    ?'H₂ → 2H⁺ + 2e⁻ at TPB · electrons flow through Ni · O²⁻ flows through YSZ · pores carry gas to reaction sites'
+    :'H₂O + 2e⁻ → H₂ + O²⁻ at TPB · apply electricity to split water · O²⁻ travels through YSZ · H₂ exits through pores';
+  buildP();
+}
+function onSlider(){
+  h2=parseInt(document.getElementById('sl-h2').value);
+  spd=parseInt(document.getElementById('sl-sp').value);
+  document.getElementById('v-h2').textContent=h2+'%';
+  document.getElementById('v-sp').textContent=spd+'×';
+  buildP();
+}
+buildP();tick();
+</script>
+</body>
+</html>
