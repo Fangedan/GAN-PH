@@ -1,0 +1,56 @@
+# ── Data folders ──────────────────────────────────────────────────────────────
+# BMP image stacks (synthetic and real training data)
+synthetic_data/
+real_data/
+
+# DREAM.3D output folders
+data/persistent_diagram/
+data/persistent_images/
+
+# ── Large binary outputs ───────────────────────────────────────────────────────
+# Pickle files (PCA reducers, persistence images)
+*.pkl
+
+# CSV files from PH pipeline (large)
+data/pca_results/*.csv
+data/persistent_images/**/*.csv
+
+# ── Model weights ──────────────────────────────────────────────────────────────
+# Saved GAN and CNN model checkpoints (can be large)
+1_GAN/save_model/
+2_CNN/save_model/
+
+# ── Training process images ────────────────────────────────────────────────────
+# Epoch preview images from GAN training
+1_GAN/Process_Images/
+
+# ── Python cache ──────────────────────────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# ── Conda / virtual environments ──────────────────────────────────────────────
+.conda/
+.venv/
+env/
+
+# ── Jupyter notebooks checkpoints ────────────────────────────────────────────
+.ipynb_checkpoints/
+
+# ── OS files ──────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── What IS tracked (code and small outputs) ──────────────────────────────────
+# Keeping:
+#   *.py scripts
+#   *.md README
+#   data/pca_results/*.png  (PCA plots — small, useful to show)
+#   log.dat files           (training logs — small text)
+#   moving_ave.png          (CNN loss plot)
+#   *.png loss plots from 1_GAN/
+!data/pca_results/*.png
+!1_GAN/*.png
+!2_CNN/*.png
