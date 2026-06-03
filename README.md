@@ -2,7 +2,7 @@
 ### Conditional Wasserstein GAN + Persistent Homology Validation
 
 > **Interactive Demo** — [Live SOC Electrode Simulation →](https://fangedan.github.io/GAN-PH)
-> 
+>
 > A 3D visualization of the electrochemical process inside a Ni-YSZ solid oxide cell electrode, with animated particle flows and fuel cell / electrolysis mode toggle.
 
 ---
@@ -43,6 +43,7 @@ GAN-PH/
 │
 ├── generate_training_data.py   # Synthetic data generator (sphere-packing)
 ├── preprocess_dream3d.py       # DREAM.3D PNG → BMP pipeline (core deliverable)
+├── test_preprocess.py          # Test suite for preprocess_dream3d.py (4 tests)
 └── docs/
     └── index.html              # Interactive SOC simulation (GitHub Pages)
 ```
@@ -94,19 +95,75 @@ your_data_folder/
 
 **results.dat columns:** `VF0 VF1 VF2 SV0 SV1 SV2`
 - VF = volume fraction (%) for Ni, YSZ, Pore
-- SV = specific surface area (μm⁻¹) for Ni, YSZ, Pore
+- SV = specific surface area (µm⁻¹) for Ni, YSZ, Pore
 
 ---
 
 ## DREAM.3D Preprocessing
 
-If your data comes from DREAM.3D (PNG slices), use the preprocessing script to convert it:
+`preprocess_dream3d.py` converts DREAM.3D PNG slice exports into the BMP stack format expected by the GAN pipeline. It handles thresholding, phase remapping (DREAM.3D uses inverted conventions), border cropping, resizing/tiling to 64×64, z-padding, and writing `results.dat`.
+
+### Basic usage (single folder)
 
 ```bash
 python preprocess_dream3d.py --input path/to/png/folder --output ./real_data
 ```
 
-This handles thresholding, phase remapping, border cropping, resizing to 64×64, z-padding to 64 slices, and writing `results.dat` automatically.
+### Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--multi` | off | Process all sub-folders of `--input` as separate stacks. Structures are numbered sequentially across all folders. Use when you have multiple DREAM.3D exports in one parent directory. |
+| `--tile-xy` | off | For large inputs (e.g. 500×500×500), tile spatially in all three axes instead of resizing each slice to 64×64. A 500×500 slice (cropped to 452×452) yields ⌊452/64⌋² = 49 patches per z-slab. |
+| `--border N` | 24 | Pixels to crop from each edge before resizing. Set to `0` for data with no border. |
+| `--dry-run` | off | Print what would happen without writing any files — useful before committing to a long run. |
+| `--preview` | off | Save `preview.png` (slice 32 of the first sub-volume) for visual verification of phase mapping. |
+| `--synthetic-test` | off | Round-trip test: reverse-maps an existing BMP stack to fake DREAM.3D PNGs, then runs the full pipeline, letting you verify correctness without real data. |
+
+### Large dataset examples
+
+```bash
+# Multiple stacks in one parent folder (Juan sends several DREAM.3D exports)
+python preprocess_dream3d.py --input ./juan_parent --output ./real_data --multi
+
+# Large 500x500x500 stack — tile spatially to get ~49 structures per z-slab
+python preprocess_dream3d.py --input ./juan_data --output ./real_data --tile-xy
+
+# Dry run first to check what would be produced, then run for real
+python preprocess_dream3d.py --input ./juan_data --output ./real_data --tile-xy --dry-run
+python preprocess_dream3d.py --input ./juan_data --output ./real_data --tile-xy --preview
+```
+
+### PNG naming
+
+The script auto-detects the naming convention used by DREAM.3D. It tries the following patterns in order and uses the first match:
+
+```
+Slice*.png      # DREAM.3D default  (Slice0000.png, Slice0001.png, ...)
+slice_*.png     # lowercase underscore variant
+slice*.png      # lowercase no-underscore variant
+*.png           # fallback: any PNG, sorted alphabetically
+```
+
+---
+
+## Testing
+
+`test_preprocess.py` is a standalone test suite that verifies `preprocess_dream3d.py` without requiring any real DREAM.3D data. It generates synthetic inputs internally and checks outputs against expected values.
+
+```bash
+python test_preprocess.py           # run all tests, delete outputs when done
+python test_preprocess.py --keep    # run all tests, keep test_outputs/ for inspection
+```
+
+**Four tests are included:**
+
+| Test | What it checks |
+|------|---------------|
+| Resize mode | 50 slices, 500×500 px → 1 structure (z-mirror padded to 64). Confirms 64 BMP slices + `preview.png`. |
+| Tile-XY mode | 64 slices, 500×500 px → exactly 49 structures. Verifies ⌊452/64⌋² = 7×7 spatial tiling. |
+| Multi mode | 2 sub-folders processed in one run → 2 structures with sequential numbering (`structure_0001`, `structure_0002`). |
+| Phase round-trip | Pure-Ni DREAM.3D PNG (pixel=0) must map to exactly 255 in the output BMP. Pixel-level verification. |
 
 ---
 
@@ -146,8 +203,17 @@ python generate_training_data.py
 
 **Option B:** Preprocess real DREAM.3D data:
 ```bash
+# Single folder (small stack)
 python preprocess_dream3d.py --input path/to/pngs --output ./real_data
+
+# Multiple stacks in one parent folder
+python preprocess_dream3d.py --input path/to/parent --output ./real_data --multi
+
+# Large stack (500x500x500+) — tile spatially
+python preprocess_dream3d.py --input path/to/pngs --output ./real_data --tile-xy
 ```
+
+After running, set `n_struc` in `2_CNN/main.py` and `1_GAN/main.py` to the number of structures reported at the end of the script's output.
 
 ### Step 2 — Train the CNN surface area estimator
 
@@ -189,4 +255,4 @@ After training on real Ni-YSZ microstructure data, the model:
 ## Acknowledgements
 
 Original code and research by Yamatoko et al., Kyoto University / AGH University of Krakow.  
-This fork is maintained by Andrew Lin (CS Intern, UTD Lab) — Python preprocessing pipeline and interactive simulation.
+This fork is maintained by Andrew Lin (CS Intern, UTD Lab) — Python preprocessing pipeline (`preprocess_dream3d.py`), test suite (`test_preprocess.py`), and interactive simulation.
