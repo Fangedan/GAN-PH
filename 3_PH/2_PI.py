@@ -92,7 +92,7 @@ def main():
         header_pd,
         header_pi,
         label_RF="real",
-        label_vf="Ni",
+        label_vf="Pore",
         max_dim=3,
         x_range=(-18.5,18.5)
     )
