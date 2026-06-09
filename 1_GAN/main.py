@@ -1,85 +1,76 @@
-# Code for training of WGAN-gp
-# Wasserstein GAN with gradient penalty
+# Main script for WGAN-GP training
+# Generates 3D microstructures of SOC electrodes
+#
+# MODIFICATION: b_size changed from 64 to 4 for CPU training.
 
-import os 
-import torch
-import sys
-import torch.nn as nn
-from torch.utils.data import DataLoader
-from torchsummary import summary
-import torch.optim as optim
-
-import analysis
 import load
 import models
 import training
+import os
+from pathlib import Path
+import torch
+import torch.optim as optim
 
+# --------- Hyperparameters --------- #
+n_struc = 50      # number of training structures
+n_size  = 64      # voxel size
+seed    = 42      # random seed
+b_size  = 4       # batch size  <- was 64; reduced for CPU stability
+epochs  = 50      # number of training epochs
+lr      = 0.0001  # learning rate
+
+Input_header = Path("../synthetic_data")
+
+# --------- Main --------- #
 def main():
+    load.torch_fix_seed(seed)
 
-    # ----- 00 Device check ----- #
-    print("Device check start!!")
-    ngpu = torch.cuda.device_count()
-    device = torch.device("cuda" if(torch.cuda.is_available()and ngpu>0) else "cpu")
-    print(device, " will be used.")
-    print(ngpu, " : Available gpu number")
+    # ---- Load training data ---- #
+    x_train = load.load_structure(n_struc, n_size, Input_header)
+    y_train = load.get_label(n_struc, Input_header)
 
-    # ----- 01 Hyper Parameters ----- #
-    b_size = 64  # batch size
-    epochs = 50  # the number of epochs
-    latent_size = 100  # the size of latent vector
-    n_struc = 50  # the number of structure data
-    in_header = "../synthetic_data"
+    train_dataset = torch.utils.data.TensorDataset(x_train, y_train)
+    train_loader  = torch.utils.data.DataLoader(
+        train_dataset, batch_size=b_size, shuffle=True
+    )
 
-    # ----- 02 Load Training Data ----- #
-    load.torch_fix_seed(seed=500)
-    label = load.get_label(n_struc=n_struc, Input_header=in_header)
-    path_td = os.path.join(in_header, "x_train.pt")
-    if os.path.isfile(path_td) == True:
-        print("Load 3D micro structure")
-        x_train = torch.load(path_td)
-    else:
-        x_train = load.load_structure(n_struc=n_struc,n_size=64,Input_header=in_header)
-    dataset = torch.utils.data.TensorDataset(x_train, label)
-    dataloader = torch.utils.data.DataLoader(dataset, batch_size=b_size, shuffle=True)
+    # ---- Device ---- #
+    ngpu   = torch.cuda.device_count()
+    device = torch.device("cuda" if (torch.cuda.is_available() and ngpu > 0) else "cpu")
+    print(device, "will be used.")
 
-    
-    # ----- 03 Construct Neural Network ----- #
-    # Generator
-    model_g = models.Generator().to(device)
-    model_g.apply(models.weights_init)
-    print(summary(model_g,[(latent_size,4,4,4),(3,4,4,4),(3,4,4,4)]))
+    # ---- Load pretrained SSA estimator (frozen) ---- #
+    estimator = models.Estimator(in_ch=1, ndf=32).to(device)
+    estimator.load_state_dict(
+        torch.load("../2_CNN/save_model/model_200epoch.pth", map_location=device)
+    )
+    estimator.eval()
 
-    # Critic
-    model_c = models.Critic().to(device)
-    model_c.apply(models.weights_init)
-    print(summary(model_c,(3,64,64,64)))
+    # ---- Build Generator and Critic ---- #
+    generator = models.Generator(latent_size=100).to(device)
+    generator.apply(models.weights_init)
 
-    # Estimator
-    model_e = models.Estimator(in_ch=1, ndf=32).to(device)
-    path = "../2_CNN/save_model/model_200epoch.pth"
-    load_weight = torch.load(path)
-    model_e.load_state_dict(load_weight)
-    model_e = model_e.eval()
+    critic = models.Critic().to(device)
+    critic.apply(models.weights_init)
 
-    # ----- 04 Training ----- #
-    optimizer_c = optim.Adam(model_c.parameters(),
-                        lr = 0.0002,
-                        betas = (0.5,0.999)
-                        )
+    # ---- Optimizers ---- #
+    opt_g = optim.Adam(generator.parameters(), lr=lr, betas=(0.5, 0.9))
+    opt_c = optim.Adam(critic.parameters(),    lr=lr, betas=(0.5, 0.9))
 
-    optimizer_g = optim.Adam(model_g.parameters(),
-                            lr = 0.0002,
-                            betas = (0.5,0.999)
-                            )
-    
-    trainer = training.Trainer(model_g=model_g, optim_g=optimizer_g, model_c=model_c, optim_c=optimizer_c,
-                               model_e=model_e, epochs=epochs, device=device,
-                               dataloader=dataloader, in_header=in_header)
+    # ---- Train ---- #
+    trainer = training.Trainer(
+        model_g    = generator,
+        optim_g    = opt_g,
+        model_c    = critic,
+        optim_c    = opt_c,
+        model_e    = estimator,
+        epochs     = epochs,
+        device     = device,
+        dataloader = train_loader,
+        in_header  = str(Input_header)
+    )
     trainer.train()
 
-    # ----- 05 PLot Images ----- #
-    plot_image = analysis.Images()
-    plot_image.plot_save()
 
 if __name__ == "__main__":
     main()

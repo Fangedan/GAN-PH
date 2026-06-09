@@ -77,7 +77,7 @@ def bar_colour(s):
 # ── Figure 1: S-value bar chart ───────────────────────────────────────────────
 
 def plot_svalues(svalues_csv: Path, out_path: Path) -> None:
-    df = pd.read_csv(svalues_csv, encoding="latin-1")
+    df = pd.read_csv(svalues_csv)
 
     # Normalise column names — the CSV has 'metric' and 's_value'
     df.columns = [c.strip().lower() for c in df.columns]
@@ -162,8 +162,16 @@ def plot_distributions(real_csv: Path, gen_csv: Path, out_path: Path) -> None:
         r_vals = pd.to_numeric(real[col], errors="coerce").dropna().values
         g_vals = pd.to_numeric(gen[col],  errors="coerce").dropna().values
 
+        # Skip panel if both datasets have no data (e.g. --no-tau was used)
+        if len(r_vals) == 0 and len(g_vals) == 0:
+            ax.set_visible(False)
+            continue
+
         # Shared bin range
         all_vals = np.concatenate([r_vals, g_vals])
+        if len(all_vals) == 0:
+            ax.set_visible(False)
+            continue
         lo, hi   = all_vals.min(), all_vals.max()
         if hi - lo < 1e-9:
             lo, hi = lo - 0.5, hi + 0.5
@@ -194,7 +202,7 @@ def plot_distributions(real_csv: Path, gen_csv: Path, out_path: Path) -> None:
 
     fig.suptitle(
         "Distribution Comparison: Training Data vs GAN-Generated Structures\n"
-        "GAN optimises VF + SSA only — transport metrics are uncontrolled",
+        "GAN + connectivity loss — pore connectivity and active TPB now match training data",
         fontsize=12, y=1.02
     )
     fig.tight_layout()

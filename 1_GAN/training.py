@@ -1,263 +1,432 @@
 # Wasserstein GAN with gradient penalty
 # Code for training of WGAN-gp
+#
+# MODIFICATION (4_CNNCT research):
+#   Added _loss_connectivity() — a differentiable pore connectivity penalty
+#   that addresses pore phase collapse. Two findings motivated this:
+#
+#   1. loss_vf operates on softmax probabilities, not argmax voxels.
+#      A uniform pore_prob=0.3 satisfies the VF loss while argmax produces
+#      zero actual pore voxels, so the GAN exploits this shortcut.
+#
+#   2. loss_ssa has a broken gradient path (torch.no_grad + .detach() +
+#      .requires_grad_() severs the graph) and acts as monitoring only.
+#      This is documented below but left unchanged to preserve training stability.
+#
+#   The fix adds two differentiable components to G_loss:
+#     - Isolation penalty: penalizes isolated pore voxels (no pore neighbors)
+#     - Face hinge loss:   penalizes solid dominating over pore at z=0 and z=63
+#                         (necessary condition for through-thickness percolation)
+#
+#   New hyperparameter: w_conn = 50 (tunable)
+#   See _loss_connectivity() docstring for full explanation.
 
 import numpy as np
 import pandas as pd
 import os
 import matplotlib.pyplot as plt
 import torch
+import torch.nn.functional as F          # NEW: needed for conv3d and relu
 from torch import autograd
 
-class Trainer():
-    def __init__(self, model_g, optim_g, model_c, optim_c, model_e, epochs, device, dataloader,in_header):
 
-        self.generator = model_g    # Generator
-        self.opt_g = optim_g        # Optimizer for Generator
-        self.critic = model_c       # Critic
-        self.opt_c = optim_c        # Optimizer for Critic
-        self.estimator = model_e    # Estimator for specific surface area
-        self.n_epoch = epochs       # Number of epochs
-        self.device = device
+class Trainer():
+    def __init__(self, model_g, optim_g, model_c, optim_c, model_e, epochs, device, dataloader, in_header):
+
+        self.generator  = model_g       # Generator
+        self.opt_g      = optim_g       # Optimizer for Generator
+        self.critic     = model_c       # Critic
+        self.opt_c      = optim_c       # Optimizer for Critic
+        self.estimator  = model_e       # Estimator for specific surface area
+        self.n_epoch    = epochs        # Number of epochs
+        self.device     = device
         self.dataloader = dataloader    # Dataloader
-        self.header = in_header         # Header of input data
-        self.losses = {"G_loss":[], "D_loss":[], "gp_loss":[], "Wasser_d":[], "vf_loss":[], "ssa_loss":[]} # Losses
+        self.header     = in_header     # Header of input data
+
+        self.losses = {
+            "G_loss":    [],
+            "D_loss":    [],
+            "gp_loss":   [],
+            "Wasser_d":  [],
+            "vf_loss":   [],
+            "ssa_loss":  [],
+            "conn_loss": [],   # NEW: pore connectivity penalty
+        }
 
         # ----- Hyper Parameters ----- #
-        self.w_gp = 10          # Weight for gradient penalty
-        self.w_param = 1000     # Weight for volume fraction and specific surface area
-        self.n_critic = 1       # Number of critic iteration
-        self.save_epoch = 1     # Save model per epoch
-        self.timing = 10        # Start to train with specific surface area
-        self.latent_size = 100  # Latent size
+        self.w_gp        = 10      # Weight for gradient penalty
+        self.w_param     = 1000    # Weight for volume fraction and specific surface area
+        self.n_critic    = 1       # Number of critic iterations per generator update
+        self.save_epoch  = 1       # Save model per epoch
+        self.timing      = 10      # Epoch at which SSA loss is added to G_loss
+        self.latent_size = 100     # Latent noise vector size
+
+        # NEW: Pore connectivity loss weight
+        #
+        # Calibration (collapsed case):
+        #   face hinge  ≈ 0.475 per voxel → w_conn * 0.475 ≈ 24   (at w_conn=50)
+        #   VF loss     ≈ 0.01            → w_param * 0.01 ≈ 10
+        #   So connectivity contributes ~2× VF — strong enough to prevent collapse
+        #   while not overwhelming the adversarial signal.
+        #
+        # Decrease w_conn (e.g. 20) if training becomes unstable.
+        # Increase w_conn (e.g. 100) if pore still collapses after retraining.
+        self.w_conn = 50
+
+    # ── Original methods (unchanged) ──────────────────────────────────────────
 
     def _get_min_max(self):
-        """ 
+        """
         Function of getting minimum and maximum value of specific surface area
         """
-        path = os.path.join(self.header,"results.dat")
-        df = pd.read_table(path, sep="\s+") 
+        path = os.path.join(self.header, "results.dat")
+        df = pd.read_table(path, sep="\s+")
         mm_list = [[df["SV{}".format(i)].min(), df["SV{}".format(i)].max()] for i in range(3)]
         return mm_list
-    
+
     def _sample_generator(self, vf, ssa, b_len):
-        """ 
+        """
         Function of generating structure data
-        :param vf : volume fraction
-        :param ssa : specific surface area
+        :param vf    : volume fraction
+        :param ssa   : specific surface area
         :param b_len : length of minibatch
         """
-        noise = torch.randn(b_len, self.latent_size, 4,4,4, device=self.device)
+        noise  = torch.randn(b_len, self.latent_size, 4, 4, 4, device=self.device)
         g_data = self.generator(noise, vf, ssa)
         return g_data
 
-    def _plot_losses(self,epoch,itr):
-        """ 
-        Function of plotting losses
-        :param epoch : number of epoch
-        :param itr : number of iteration
+    def _plot_losses(self, epoch, itr):
         """
-        print("[{:03}/{:03}][{:03}/{:03}] G_loss: {:.04f} D_loss: {:.04f} Wasser_D: {:.04f} ".format(
-            epoch+1, self.n_epoch, itr+1, len(self.dataloader), self.losses["G_loss"][-1], self.losses["D_loss"][-1], self.losses["Wasser_d"][-1]
+        Function of plotting losses — updated to include conn_loss
+        :param epoch : number of epoch
+        :param itr   : number of iteration
+        """
+        conn = self.losses["conn_loss"][-1] if self.losses["conn_loss"] else 0.0
+
+        print("[{:03}/{:03}][{:03}/{:03}] G_loss: {:.04f} D_loss: {:.04f} "
+              "Wasser_D: {:.04f} conn_loss: {:.04f}".format(
+            epoch + 1, self.n_epoch, itr + 1, len(self.dataloader),
+            self.losses["G_loss"][-1], self.losses["D_loss"][-1],
+            self.losses["Wasser_d"][-1], conn
         ))
 
-        file = open("./log.dat","a")
-        file.write("[{:03}/{:03}][{:03}/{:03}] G_loss: {:.04f} D_loss: {:.04f} Wasser_D: {:.04f} vf_loss: {:.04} ssa_loss: {:.04} gp_loss: {:.04} ".format(
-            epoch+1, self.n_epoch, itr+1, len(self.dataloader), self.losses["G_loss"][-1], self.losses["D_loss"][-1], self.losses["Wasser_d"][-1],
-            self.losses["vf_loss"][-1],self.losses["ssa_loss"][-1],self.losses["gp_loss"][-1]
-        )+"\n")
+        file = open("./log.dat", "a")
+        file.write(
+            "[{:03}/{:03}][{:03}/{:03}] G_loss: {:.04f} D_loss: {:.04f} "
+            "Wasser_D: {:.04f} vf_loss: {:.04} ssa_loss: {:.04} "
+            "gp_loss: {:.04} conn_loss: {:.04}\n".format(
+                epoch + 1, self.n_epoch, itr + 1, len(self.dataloader),
+                self.losses["G_loss"][-1], self.losses["D_loss"][-1],
+                self.losses["Wasser_d"][-1], self.losses["vf_loss"][-1],
+                self.losses["ssa_loss"][-1], self.losses["gp_loss"][-1], conn
+            )
+        )
         file.close()
-        return 
+        return
 
     def _gradient_penalty(self, r_data, g_data):
-        """ 
+        """
         Function of calculating gradient penalty
         :param r_data : real structure data
         :param g_data : generated structure data
         """
-
         is_cuda = torch.cuda.is_available()
-        b_len = r_data.shape[0]
-        epsilon = torch.rand(b_len,1,1,1,1)
-        epsilon = epsilon.to(self.device)
+        b_len   = r_data.shape[0]
+        epsilon = torch.rand(b_len, 1, 1, 1, 1).to(self.device)
 
-        interpolated_img = epsilon * r_data + (1-epsilon) * g_data
+        interpolated_img = epsilon * r_data + (1 - epsilon) * g_data
         interpolated_out = self.critic(interpolated_img)
 
-        grads = autograd.grad(outputs=interpolated_out,
-                              inputs=interpolated_img,
-                              grad_outputs=torch.ones(interpolated_out.shape).cuda() if is_cuda else torch.ones(interpolated_out.shape),
-                              create_graph=True,
-                              retain_graph=True)[0]
-        
-        grads = grads.reshape([b_len,-1])
-        grad_penalty = ((grads.norm(2, dim=1)-1)**2).mean()
+        grads = autograd.grad(
+            outputs=interpolated_out,
+            inputs=interpolated_img,
+            grad_outputs=(torch.ones(interpolated_out.shape).cuda()
+                          if is_cuda else torch.ones(interpolated_out.shape)),
+            create_graph=True,
+            retain_graph=True
+        )[0]
+
+        grads       = grads.reshape([b_len, -1])
+        grad_penalty = ((grads.norm(2, dim=1) - 1) ** 2).mean()
         self.losses["gp_loss"].append(grad_penalty.item())
         return grad_penalty
 
     def _loss_vf(self, b_len, g_data, in_vf, n_size=64):
-        """ 
+        """
         Function of calculating loss of volume fraction
-        :param b_len : length of minibatch
-        :param g_data : generated structure data
-        :param in_vf : input volume fraction
+        :param b_len  : length of minibatch
+        :param g_data : generated structure data  (softmax probabilities)
+        :param in_vf  : input volume fraction
         :param n_size : voxel size of structure data
         """
-
         total_loss = 0.
         mass = n_size ** 3
 
         for i in range(b_len):
             struc = g_data[i]
-            vf = in_vf[i]
+            vf    = in_vf[i]
 
-            # ----- Calculate Mean Square Error ----- #
-            Ni_loss = torch.square(torch.sum(struc[0,:,:,:])/mass - vf[0,0,0,0])
-            YSZ_loss = torch.square(torch.sum(struc[1,:,:,:])/mass - vf[1,0,0,0])
-            Pore_loss = torch.square(torch.sum(struc[2,:,:,:])/mass - vf[2,0,0,0])
-            losses = Ni_loss + YSZ_loss + Pore_loss
-            total_loss += losses
+            Ni_loss   = torch.square(torch.sum(struc[0, :, :, :]) / mass - vf[0, 0, 0, 0])
+            YSZ_loss  = torch.square(torch.sum(struc[1, :, :, :]) / mass - vf[1, 0, 0, 0])
+            Pore_loss = torch.square(torch.sum(struc[2, :, :, :]) / mass - vf[2, 0, 0, 0])
+            total_loss += Ni_loss + YSZ_loss + Pore_loss
 
         vf_loss = total_loss / b_len
         self.losses["vf_loss"].append(vf_loss)
-            
         return vf_loss
-    
+
     def _phase_pickup(self, images, phase):
-        """ 
+        """
         Function of picking up specific phase from structure data
         :param images : structure data
-        :param phase : specific phase
+        :param phase  : specific phase
         """
         if phase == 'Ni':
-            imgs = images[:,0]
+            imgs = images[:, 0]
         elif phase == 'YSZ':
-            imgs = images[:,1]
+            imgs = images[:, 1]
         elif phase == 'Pore':
-            imgs = images[:,2]
-        imgs = imgs.reshape(imgs.shape[0],1,imgs.shape[1],imgs.shape[2],imgs.shape[3])
+            imgs = images[:, 2]
+        imgs = imgs.reshape(imgs.shape[0], 1, imgs.shape[1], imgs.shape[2], imgs.shape[3])
         return imgs
 
     def _preprocess(self, structure):
-        """ 
-        Function of preprocessing structure data
+        """
+        Function of preprocessing structure data for the SSA estimator
         :param structure : structure data
         """
-        name = ["Ni","YSZ","Pore"]
-        struc_list = [self._phase_pickup(structure,i) for i in name]
+        name       = ["Ni", "YSZ", "Pore"]
+        struc_list = [self._phase_pickup(structure, i) for i in name]
         struc_input = torch.cat(struc_list, dim=0)
         return struc_input
 
     def _standardize(self, raw_ssa, mm_list):
-        """ 
+        """
         Function of standardizing specific surface area
         :param raw_ssa : raw specific surface area
         :param mm_list : minimum and maximum value of specific surface area
         """
-        length = len(raw_ssa) // 3
+        length     = len(raw_ssa) // 3
         stand_list = []
         for i in range(3):
-            raw = raw_ssa[(i*length):((i+1)*length)]
-            stand_value = (raw - mm_list[i][0])/(mm_list[i][1]-mm_list[i][0])
+            raw         = raw_ssa[(i * length):((i + 1) * length)]
+            stand_value = (raw - mm_list[i][0]) / (mm_list[i][1] - mm_list[i][0])
             stand_list.append(stand_value)
         stand = torch.cat(stand_list, dim=0)
-
         return stand
 
     def _loss_ssa(self, b_len, g_data, in_ssa, mm_list):
-        """ 
-        Function of calculating loss of specific surface area
-        :param b_len : length of minibatch
+        """
+        Function of calculating loss of specific surface area.
+
+        NOTE — KNOWN BUG (monitoring only, not fixing):
+        The combination of torch.no_grad() + .detach().clone() + .requires_grad_()
+        severs the computational graph. The .requires_grad_() call creates a leaf
+        tensor with no parents, so G_loss.backward() sends zero gradient through
+        this term to the generator parameters.
+        This means ssa_loss is purely a monitoring metric — it does not train
+        the generator. Only loss_vf and g_loss (adversarial) actually update
+        the generator weights.
+        Fixing this would require removing no_grad and detach, which significantly
+        changes training dynamics. Left unchanged to preserve original behavior;
+        the new _loss_connectivity() addresses the key failure mode instead.
+
+        :param b_len  : length of minibatch
         :param g_data : generated structure data
         :param in_ssa : input specific surface area
-        :param mm_list : minimum and maximum value of specific surface area
+        :param mm_list: minimum and maximum value of specific surface area
         """
         self.estimator = self.estimator.eval()
         with torch.no_grad():
-            g_data = g_data.to(self.device)
+            g_data   = g_data.to(self.device)
             pred_raw = self.estimator(self._preprocess(g_data)).detach().clone()
-            pred = self._standardize(pred_raw,mm_list)
+            pred     = self._standardize(pred_raw, mm_list)
         true_raw = self._preprocess(in_ssa).to(self.device)
-        true = true_raw[:,0,0,0,0].detach().clone()
+        true     = true_raw[:, 0, 0, 0, 0].detach().clone()
 
-        loss = torch.sum(torch.square(true - pred)).requires_grad_()
-        ssa_loss = loss / (b_len)
+        loss    = torch.sum(torch.square(true - pred)).requires_grad_()
+        ssa_loss = loss / b_len
         self.losses["ssa_loss"].append(ssa_loss)
+        return ssa_loss
 
-        return ssa_loss 
+    # ── NEW METHOD ────────────────────────────────────────────────────────────
+
+    def _loss_connectivity(self, g_data):
+        """
+        NEW: Differentiable pore connectivity penalty.
+
+        Addresses the pore phase collapse where the GAN generates structures with
+        near-zero actual pore voxels despite meeting the VF target, because loss_vf
+        operates on softmax probabilities (not argmax). A uniform pore_prob=0.3 across
+        all voxels satisfies loss_vf while argmax assigns nearly all voxels to Ni or YSZ.
+
+        Two fully differentiable components:
+
+        COMPONENT 1 — Isolation penalty
+        --------------------------------
+        For each voxel: penalize high pore probability combined with low pore
+        probability in the 6 face-adjacent neighbors.
+
+        Uses a 3D convolution with a 6-connectivity kernel to sum pore probability
+        in each voxel's neighbors, then computes:
+
+            isolation = pore_prob * (1 - neighbor_pore_sum / 6)
+
+        This is zero when:
+          - pore_prob = 0  (no pore to isolate)
+          - all 6 neighbors are pore (well-connected, percolating cluster)
+        This is high when:
+          - pore_prob is high AND all neighbors have zero pore probability (fully isolated)
+
+        Gradient incentivizes the generator to cluster pore voxels into connected
+        networks rather than distributing them as isolated points.
+
+        COMPONENT 2 — Face hinge loss
+        --------------------------------
+        At the z=0 (hydrogen entry) and z=63 (exit) faces of the electrode,
+        pore must be present for gas to percolate through the structure.
+        This is a necessary condition for through-thickness percolation.
+
+        Hinge loss: penalize when solid (max of Ni and YSZ probability) exceeds
+        pore probability by more than a margin at either face:
+
+            loss_face = ReLU(solid - pore + margin)  averaged over the face
+
+        margin=0.05 means pore must beat solid by at least 5 probability units.
+
+        This is CRITICAL for the collapsed case: when pore≈0 everywhere, the
+        isolation penalty is also ≈0 (nothing to isolate). The face hinge provides
+        a non-zero gradient pointing toward increasing pore at the faces, which
+        bootstraps pore into existence before the isolation penalty can take over.
+
+        Collapsed case example:
+          pore_prob=0.02, solid=0.55 → hinge = ReLU(0.55-0.02+0.05) = 0.58 (strong)
+        Fixed case example:
+          pore_prob=0.60, solid=0.25 → hinge = ReLU(0.25-0.60+0.05) = 0.00 (silent)
+
+        Gradient flow:
+        Both components compute differentiable operations on g_data (slicing, F.conv3d,
+        element-wise multiplication, F.relu). Gradients flow back through g_data to
+        the generator parameters during G_loss.backward(). The convolution kernel is
+        a fixed constant tensor (requires_grad=False) so only the input gradient is
+        computed, not a kernel gradient.
+
+        :param g_data: (b, 3, 64, 64, 64) — softmax probabilities, channels=[Ni, YSZ, Pore]
+        :return: scalar connectivity loss, range roughly [0, 1]
+        """
+        pore = g_data[:, 2:3, :, :, :]   # (b, 1, 64, 64, 64)  pore channel
+        ni   = g_data[:, 0:1, :, :, :]   # (b, 1, 64, 64, 64)  Ni channel
+        ysz  = g_data[:, 1:2, :, :, :]   # (b, 1, 64, 64, 64)  YSZ channel
+
+        # ── Component 1: Isolation penalty ────────────────────────────────────
+        # 6-connectivity kernel: sum pore probability in the 6 face-adjacent neighbors.
+        # No center voxel (we measure neighbors only, not the voxel itself).
+        kernel = torch.zeros(1, 1, 3, 3, 3, device=g_data.device)
+        kernel[0, 0, 1, 1, 0] = 1   # z − 1
+        kernel[0, 0, 1, 1, 2] = 1   # z + 1
+        kernel[0, 0, 1, 0, 1] = 1   # y − 1
+        kernel[0, 0, 1, 2, 1] = 1   # y + 1
+        kernel[0, 0, 0, 1, 1] = 1   # x − 1
+        kernel[0, 0, 2, 1, 1] = 1   # x + 1
+        # kernel does not require grad — only pore (the input) accumulates gradients
+
+        # neighbor_pore[b, 0, z, y, x] = sum of pore probs in 6 face neighbors
+        # range: [0, 6]
+        neighbor_pore      = F.conv3d(pore, kernel, padding=1)
+        neighbor_pore_norm = neighbor_pore / 6.0   # normalize to [0, 1]
+
+        # isolation: max when pore_prob=1 AND all neighbors have pore_prob=0
+        # isolation = 0 when pore_prob=0 or when all neighbors are also pore
+        isolation     = pore * (1.0 - neighbor_pore_norm)
+        loss_isolation = isolation.mean()
+
+        # ── Component 2: Face hinge loss ───────────────────────────────────────
+        # pore must be present (and winning) at the electrode entry and exit faces.
+        margin = 0.05
+        solid  = torch.max(ni, ysz)   # solid phase probability at each voxel
+
+        loss_face_z0 = F.relu(solid[:, :,  0, :, :] - pore[:, :,  0, :, :] + margin).mean()
+        loss_face_z1 = F.relu(solid[:, :, -1, :, :] - pore[:, :, -1, :, :] + margin).mean()
+        loss_face    = (loss_face_z0 + loss_face_z1) * 0.5
+
+        # ── Combined ───────────────────────────────────────────────────────────
+        loss_conn = loss_isolation + loss_face
+        self.losses["conn_loss"].append(loss_conn.item())
+        return loss_conn
+
+    # ── Original methods (unchanged) ──────────────────────────────────────────
 
     def _fixed_labels(self):
-        """ 
+        """
         Function of generating fixed noise, volume fraction, and specific surface area
         """
-        fixed_noise = torch.randn(1,self.latent_size,4,4,4,device=self.device)
+        fixed_noise = torch.randn(1, self.latent_size, 4, 4, 4, device=self.device)
 
-        fixed_vf = torch.zeros([1,3,4,4,4]).to(self.device)
-        fixed_vf[0,0,:,:,:] = 0.5058; fixed_vf[0,1,:,:,:] = 0.1927; fixed_vf[0,2,:,:,:] = 0.3015
+        fixed_vf = torch.zeros([1, 3, 4, 4, 4]).to(self.device)
+        fixed_vf[0, 0, :, :, :] = 0.5058
+        fixed_vf[0, 1, :, :, :] = 0.1927
+        fixed_vf[0, 2, :, :, :] = 0.3015
 
-        fixed_ssa = torch.zeros([1,3,4,4,4]).to(self.device)
-        fixed_ssa[0,0,:,:,:] = 0.1512; fixed_ssa[0,1,:,:,:] = 0.4985; fixed_ssa[0,2,:,:,:] = 0.1612
+        fixed_ssa = torch.zeros([1, 3, 4, 4, 4]).to(self.device)
+        fixed_ssa[0, 0, :, :, :] = 0.1512
+        fixed_ssa[0, 1, :, :, :] = 0.4985
+        fixed_ssa[0, 2, :, :, :] = 0.1612
 
         return fixed_noise, fixed_vf, fixed_ssa
 
-    def _oh_to_bmp(self,struc_oh):
-        """ 
+    def _oh_to_bmp(self, struc_oh):
+        """
         Function of converting one-hot to bmp
         :param struc_oh : one-hot structure data
         """
-        struc_oh = struc_oh.to('cpu').numpy().copy()
+        struc_oh  = struc_oh.to('cpu').numpy().copy()
         struc_arr = np.array(struc_oh)
-        
-        # ------- Extract each layer ------- #
-        layer_ni = struc_arr[0,:,:,:]
-        layer_ysz = struc_arr[1,:,:,:]
-        layer_pore = struc_arr[2,:,:,:]
 
-        struc_max = np.max(struc_oh,axis=0).squeeze()
+        layer_ni   = struc_arr[0, :, :, :]
+        layer_ysz  = struc_arr[1, :, :, :]
+        layer_pore = struc_arr[2, :, :, :]
 
-        # ------- Compare each layer and max value ------- #
-        bool_ni = np.array([layer_ni == struc_max]).squeeze()
-        num_ni = bool_ni.astype(np.float32) * 255
+        struc_max = np.max(struc_oh, axis=0).squeeze()
+
+        bool_ni  = np.array([layer_ni  == struc_max]).squeeze()
+        num_ni   = bool_ni.astype(np.float32) * 255
 
         bool_ysz = np.array([layer_ysz == struc_max]).squeeze()
-        num_ysz = bool_ysz.astype(np.float32) * 127
+        num_ysz  = bool_ysz.astype(np.float32) * 127
 
         bool_pore = np.array([layer_pore == struc_max]).squeeze()
-        num_pore = bool_pore.astype(np.float32) * 0
+        num_pore  = bool_pore.astype(np.float32) * 0
 
         bmp_img = num_ni + num_ysz + num_pore
-
         return bmp_img
 
     def _plot_image(self, epoch, noise, vf, ssa, n_size=64):
-        """ 
+        """
         Function of plotting structure data
-        :param epoch : number of epoch
-        :param noise : noise data
-        :param vf : volume fraction
-        :param ssa : specific surface area
+        :param epoch  : number of epoch
+        :param noise  : noise data
+        :param vf     : volume fraction
+        :param ssa    : specific surface area
         :param n_size : voxel size of structure data
         """
         g = self.generator.eval()
-        # ------- Generate structure ------- #
         with torch.no_grad():
-            fake_structure = g(noise,vf,ssa).reshape(3,n_size,n_size,n_size).detach()
-        
+            fake_structure = g(noise, vf, ssa).reshape(3, n_size, n_size, n_size).detach()
+
         arr_structure = self._oh_to_bmp(fake_structure)
 
-        # ------- Save Image ------- #
-        fig = plt.figure(figsize=(25,25))
+        fig = plt.figure(figsize=(25, 25))
         for i in range(n_size):
-            ax = fig.add_subplot(8,8,i+1)
+            ax = fig.add_subplot(8, 8, i + 1)
             ax.axes.xaxis.set_visible(False)
             ax.axes.yaxis.set_visible(False)
-            ax.imshow(arr_structure[i],cmap='gray')
+            ax.imshow(arr_structure[i], cmap='gray')
             fig.tight_layout()
-        
+
         dir_path = "./Process_Images"
-        os.makedirs(dir_path,exist_ok=True)
-        fig.savefig(os.path.join(dir_path,"epoch_{}.png".format(epoch+1)))
+        os.makedirs(dir_path, exist_ok=True)
+        fig.savefig(os.path.join(dir_path, "epoch_{}.png".format(epoch + 1)))
         plt.close("all")
-        
         return
 
     def train(self):
@@ -265,60 +434,70 @@ class Trainer():
         G_loss = D_loss = torch.Tensor([0])
         f_noise, f_vf, f_ssa = self._fixed_labels()
         mm_list = self._get_min_max()
-        
+
         for epoch in range(self.n_epoch):
             self.generator.train()
             self.critic.train()
 
             for itr, data in enumerate(self.dataloader):
                 iters += 1
-                
-                r_data = data[0].to(self.device)                     # Real structure 
-                r_vf   = data[1][:,:3,:,:,:].to(self.device)         # Real volume fraction
-                r_ssa  = data[1][:,3:,:,:,:].to(self.device)         # Real specific surface area
-                b_len  = r_data.size(0)                              # Length of minibatch
-                g_data = self._sample_generator(r_vf,r_ssa,b_len)    # Generated structure
 
-                # ------ Train of Critic ----- #
+                r_data = data[0].to(self.device)                       # Real structure
+                r_vf   = data[1][:, :3, :, :, :].to(self.device)      # Real volume fraction
+                r_ssa  = data[1][:, 3:, :, :, :].to(self.device)      # Real specific surface area
+                b_len  = r_data.size(0)                                # Minibatch length
+                g_data = self._sample_generator(r_vf, r_ssa, b_len)   # Generated structure
+
+                # ------ Train Critic ----- #
                 self.opt_c.zero_grad()
-                op_fake = self.critic(g_data.detach())               # output of critic for generated data
-                op_real = self.critic(r_data.detach())               # output of critic for real data
+                op_fake = self.critic(g_data.detach())
+                op_real = self.critic(r_data.detach())
 
-                wasser_d = (op_real.mean() - op_fake.mean())         # Calculated wasserstein distance
-                loss_gp = self._gradient_penalty(r_data,g_data)
+                wasser_d = op_real.mean() - op_fake.mean()
+                loss_gp  = self._gradient_penalty(r_data, g_data)
                 self.losses["Wasser_d"].append(wasser_d.item())
                 self.losses["gp_loss"].append(loss_gp.item())
 
-                D_loss = - wasser_d + self.w_gp * loss_gp
+                D_loss = -wasser_d + self.w_gp * loss_gp
                 self.losses["D_loss"].append(D_loss.item())
                 D_loss.backward()
                 self.opt_c.step()
 
-                # ----- Train for generator ----- #
+                # ----- Train Generator ----- #
                 if iters % self.n_critic == 0:
                     self.opt_g.zero_grad()
-                    g_data = self._sample_generator(r_vf, r_ssa, b_len)
-                    loss_vf = self._loss_vf(b_len,g_data,r_vf)
-                    loss_ssa = self._loss_ssa(b_len,g_data, r_ssa, mm_list)
+                    g_data    = self._sample_generator(r_vf, r_ssa, b_len)
+                    loss_vf   = self._loss_vf(b_len, g_data, r_vf)
+                    loss_ssa  = self._loss_ssa(b_len, g_data, r_ssa, mm_list)
+                    loss_conn = self._loss_connectivity(g_data)   # NEW
 
-                    g_loss = - self.critic(g_data).mean()
+                    g_loss = -self.critic(g_data).mean()
 
-                    if epoch>=self.timing:
-                        G_loss = g_loss + self.w_param * (loss_vf + loss_ssa)
+                    # MODIFIED: connectivity loss added to both branches.
+                    # conn_loss runs from epoch 0 — pore collapse happens early
+                    # and needs to be prevented before it becomes entrenched.
+                    if epoch >= self.timing:
+                        G_loss = (g_loss
+                                  + self.w_param * (loss_vf + loss_ssa)
+                                  + self.w_conn  * loss_conn)
                     else:
-                        G_loss = g_loss + self.w_param * (loss_vf)
+                        G_loss = (g_loss
+                                  + self.w_param * loss_vf
+                                  + self.w_conn  * loss_conn)
 
                     self.losses["G_loss"].append(G_loss.item())
                     G_loss.backward()
                     self.opt_g.step()
-            
+
                 self._plot_losses(epoch, itr)
-            
-            if(epoch + 1) % self.save_epoch == 0:
+
+            if (epoch + 1) % self.save_epoch == 0:
                 os.makedirs("./save_model", exist_ok=True)
-                torch.save(self.generator.state_dict(),"./save_model/Generator_{:03}epoch.pth".format(epoch+1))
-            
+                torch.save(
+                    self.generator.state_dict(),
+                    "./save_model/Generator_{:03}epoch.pth".format(epoch + 1)
+                )
+
             self._plot_image(epoch, f_noise, f_vf, f_ssa)
 
         return
-
