@@ -77,7 +77,7 @@ def bar_colour(s):
 # ── Figure 1: S-value bar chart ───────────────────────────────────────────────
 
 def plot_svalues(svalues_csv: Path, out_path: Path) -> None:
-    df = pd.read_csv(svalues_csv)
+    df = pd.read_csv(svalues_csv, encoding="latin-1")
 
     # Normalise column names — the CSV has 'metric' and 's_value'
     df.columns = [c.strip().lower() for c in df.columns]
