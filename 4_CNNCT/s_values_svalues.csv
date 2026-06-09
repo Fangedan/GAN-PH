@@ -1,0 +1,10 @@
+name,metric,s_value,interpretation
+,conn_Ni,0.7654,MARGINAL — moderate difference
+,conn_YSZ,0.7728,MARGINAL — moderate difference
+,conn_Pore,0.4804,FAIL — significant difference (feedback required)
+,total_tpb,0.6101,FAIL — significant difference (feedback required)
+,active_tpb,0.5919,FAIL — significant difference (feedback required)
+,active_tpb_frac,0.6151,FAIL — significant difference (feedback required)
+,tau_Ni,0.454,FAIL — significant difference (feedback required)
+,tau_YSZ,0.4786,FAIL — significant difference (feedback required)
+,tau_Pore,0.3131,FAIL — significant difference (feedback required)
