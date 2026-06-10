@@ -16,7 +16,7 @@ DREAM.3D / other tool          this folder                  rest of pipeline
 
 | File | Runs with | Purpose |
 |------|-----------|---------|
-| `paraview_slice_export.py` | `pvpython` (ParaView 6.1.1) | **The deliverable.** Exports a VTK volume as 70 × 500×500 PNG slices. Only file Juan needs (plus the .bat). |
+| `paraview_slice_export.py` | `pvpython` (ParaView 6.1.1) | **The deliverable.** Exports a VTK volume as 64 × 512×512 borderless PNG slices (one per voxel, 8 px/voxel). Only file Juan needs (plus the .bat). |
 | `run_slice_export.bat` | Windows (drag-and-drop) | Wrapper so Juan can drag a `.vtk` file (or folder of them) onto it instead of typing commands. Must sit next to the .py file. |
 | `make_test_vtk.py` | `ganph` python | Test harness: converts one of our BMP structures into a DREAM.3D-style test VTK with known ground truth. |
 | `verify_slices.py` | `ganph` python | Test harness: validates an exported PNG stack (count, resolution, colors, volume fractions, orientation, slice order). |
@@ -54,7 +54,7 @@ Equivalent command line, with all defaults shown:
 
 ```
 "C:\Program Files\ParaView 6.1.1\bin\pvpython.exe" paraview_slice_export.py ^
-    m_1.vtk -o m_1_slices --frames 70 --resolution 500 --array Phases
+    m_1.vtk -o m_1_slices --frames 64 --resolution 512 --array Phases
 ```
 
 `--start` / `--end` default to half a slice-step inside the volume bounds
@@ -75,7 +75,7 @@ C:\ParaView\bin\pvpython.exe paraview_slice_export.py test_structure.vtk -o test
 python verify_slices.py --slices test_slices --original ..\synthetic_data\structure_0001
 
 # 4. end-to-end: preprocess must report VFs matching step 1's printout
-python ..\preprocess_dream3d.py --input test_slices --dry-run --border 72
+python ..\preprocess_dream3d.py --input test_slices --dry-run --border 0
 ```
 
 When Juan re-exports the structure he originally sent (same VTK), close the
@@ -89,9 +89,12 @@ Expected result: identity, ~100% agreement.
 
 ## Known quirks (verified, not bugs)
 
-- **Border:** script-exported 500×500 slices have a ~72 px background border
-  → use `--border 72` in `preprocess_dream3d.py` (the old default 24 was for
-  Juan's manual exports).
+- **Border:** script exports are **borderless** (camera parallel scale pinned
+  to data extent) → use `--border 0` in `preprocess_dream3d.py`. Juan's old
+  manual exports have a background border (default 24). Never trust a fixed
+  border on screenshot-style exports: plain ResetCamera framing drifts by a
+  few px between runs, and background pixels (gray ≈94) silently snap to YSZ
+  in threshold_to_phases.
 - **Up-down flip:** exported images are vertically mirrored vs the raw voxel
   array (image row 0 = top, ParaView +Z = up). Juan's manual exports have the
   same property; preprocess was built around it. Consistent mirror — all
@@ -99,5 +102,10 @@ Expected result: identity, ~100% agreement.
 - **ParaView API:** `Hide3DWidgets` was renamed `HideInteractiveWidgets` in
   6.x; the script handles both. Tested against 6.1.1 specifically — retest
   before assuming other versions work.
-- **VF sampling noise:** 70 frames over 64 voxels duplicates a few slices →
-  ~0.4% VF wobble in verify step 4. Expected.
+- **Frames = 64, not 70:** Juan's manual process used 70 frames, but 70
+  frames over a 64-voxel volume means preprocess (which cubes the first 64
+  slices) silently drops the last ~9% of the structure and double-samples a
+  few slices — measured as a ~2.6% YSZ bias on test data. 64 frames = exact
+  one-per-voxel sampling. Use `--frames 70` only to replicate Juan's manual
+  output for comparison. NOTE: real_data built from Juan's manual 70-slice
+  export carries this artifact; regenerate it from his VTK before retraining.

@@ -90,8 +90,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--slices", required=True, help="Folder of exported PNGs")
     ap.add_argument("--original", required=True, help="Ground-truth structure folder")
-    ap.add_argument("--frames", type=int, default=70)
-    ap.add_argument("--resolution", type=int, default=500)
+    ap.add_argument("--frames", type=int, default=64)
+    ap.add_argument("--resolution", type=int, default=512)
     ap.add_argument("--start", type=float, default=None,
                     help="First slice X used in export (default: auto, like the export script)")
     ap.add_argument("--end", type=float, default=None)

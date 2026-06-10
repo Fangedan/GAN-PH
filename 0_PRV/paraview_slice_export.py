@@ -18,8 +18,10 @@ Replicates, step for step, the process in
   7.  Color legend hidden, Light Kit disabled, Orientation Axes hidden
   8.  Animation track on Slice1 "Slice Offset Values" (ContourValues),
       Ramp keyframes: t=0 -> START (Juan: 0.2), t=1 -> END (Juan: 24.8)
-  9.  Number of frames = 70 (one image per slice)
-  10. File > Save Animation, 500 x 500 PNGs
+  9.  Number of frames (default 64 = one per voxel; Juan used 70 manually,
+      which over-samples a 64-voxel volume and truncates downstream)
+  10. File > Save Animation (512x512 borderless; Juan's manual was 500x500
+      with a background border -- exact framing supersedes that)
 
 USAGE (must be run with ParaView's pvpython, NOT regular python):
 
@@ -145,6 +147,13 @@ def look_down_positive_x(view):
 
 
 def process_one(vtk_path, out_dir, args):
+    # paraview.simple auto-resets the camera on the FIRST Render() call,
+    # silently discarding any camera state set before it. Disable that, and
+    # belt-and-suspenders: re-assert the framing after the first render too.
+    try:
+        pvs._DisableFirstRenderCameraReset()
+    except Exception:
+        pass
     name = args.name or os.path.splitext(os.path.basename(vtk_path))[0]
     print("=== %s -> %s/ (%d frames) ===" % (vtk_path, out_dir, args.frames))
 
@@ -188,12 +197,33 @@ def process_one(vtk_path, out_dir, args):
         view.UseFXAA = 0                            # keep phase edges crisp
     except AttributeError:
         pass
+    # Disable multisample anti-aliasing if the API allows it: with exact-fit
+    # framing, cell boundaries align to pixel boundaries and MSAA paints
+    # blended artifact lines exactly there. (Downstream samplers must use
+    # block CENTERS regardless -- see preprocess resize_slice / verifier.)
+    for attempt in ("MultiSamples",):
+        try:
+            setattr(view, attempt, 0)
+            break
+        except Exception:
+            pass
     if args.background:
         view.UseColorPaletteForBackground = 0
         view.BackgroundColorMode = "Single Color"
         view.Background = args.background
 
     look_down_positive_x(view)
+    # Exact-fit framing: parallel scale = half the data's vertical extent, so
+    # the slice fills the viewport edge to edge. No background border, and at
+    # --resolution 512 each voxel maps to exactly 8x8 px. This removes the
+    # sub-pixel framing nondeterminism of plain ResetCamera (measured: content
+    # box drifted between 354 and 360 px across runs), which leaked background
+    # into downstream fixed-border cropping.
+    half = 0.5 * max(bounds[3] - bounds[2], bounds[5] - bounds[4])
+    view.CameraParallelScale = half
+    Render(view)
+    # Re-assert after the first render in case an automatic reset fired anyway
+    view.CameraParallelScale = half
     Render(view)
 
     # --- Steps 8-9: animate Slice Offset Values (ContourValues) --------
@@ -244,16 +274,18 @@ def main():
                         "subfolder is created per VTK file.")
     p.add_argument("--name", default=None,
                    help="Image filename prefix (default: VTK filename)")
-    p.add_argument("--frames", type=int, default=70,
-                   help="Number of slices/images to generate (default: 70)")
+    p.add_argument("--frames", type=int, default=64,
+                   help="Number of slices/images to generate (default: 64 = one per "
+                        "voxel of a 64^3 structure; Juan's manual process used 70)")
     p.add_argument("--start", type=float, default=None,
                    help="First slice X position (default: auto from bounds; "
                         "Juan used 0.2)")
     p.add_argument("--end", type=float, default=None,
                    help="Last slice X position (default: auto from bounds; "
                         "Juan used 24.8)")
-    p.add_argument("--resolution", type=int, default=500,
-                   help="Square image resolution in pixels (default: 500)")
+    p.add_argument("--resolution", type=int, default=512,
+                   help="Square image resolution in pixels (default: 512 = exactly "
+                        "8 px per voxel of a 64^3 structure, borderless)")
     p.add_argument("--array", default="Phases",
                    help="Name of the phase array (default: Phases)")
     p.add_argument("--background", type=float, nargs=3, default=None,
