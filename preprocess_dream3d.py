@@ -195,10 +195,14 @@ def crop_border(img: np.ndarray, border: int) -> np.ndarray:
 
 def resize_slice(img: np.ndarray, size: int = VOXEL_SIZE) -> np.ndarray:
     """
-    Resize to sizexsize using nearest-neighbor interpolation.
-    MUST use nearest-neighbor -- bilinear would introduce non-phase pixel values.
+    Downsample to size x size by sampling the CENTER pixel of each block.
+    Center sampling (not cv2.resize) because cv2's INTER_NEAREST samples at
+    block boundaries -- which lands exactly on rendering artifacts when the
+    input is a screenshot-style export with cell edges aligned to pixels.
     """
-    return cv2.resize(img, (size, size), interpolation=cv2.INTER_NEAREST)
+    rows = ((np.arange(size) + 0.5) * img.shape[0] / size).astype(int)
+    cols = ((np.arange(size) + 0.5) * img.shape[1] / size).astype(int)
+    return img[np.ix_(rows, cols)]
 
 
 # -- Step 5b: Tile mode (large stacks, --tile-xy) ------------------------------
