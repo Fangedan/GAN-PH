@@ -56,3 +56,9 @@ desktop.ini
 !1_GAN/*.png
 !2_CNN/*.png
  
+ # 0_ParaView test artifacts (regenerable, large)
+0_PRV/*.vtk
+0_PRV/*_slices/
+0_PRV/test_slices/
+0_PRV/test_preprocess_out/
+0_PRV/__pycache__/
