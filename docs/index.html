@@ -368,7 +368,8 @@ footer .mono{font-family:var(--mono);font-size:11px}
   </footer>
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"
+  onerror="document.getElementById('vp').innerHTML='<div style=\'display:flex;align-items:center;justify-content:center;height:100%;padding:24px;text-align:center;color:#8b97a6;font:500 13px/1.6 IBM Plex Mono,monospace\'>3D engine (three.js) failed to load from the CDN.<br>Check your connection and refresh the page.</div>'"></script>
 <script>
 'use strict';
 /* ════════════════════════════════════════════════════════════════
@@ -646,6 +647,7 @@ function buildGroup(run, isRunA){
     lists[ph] = pts;
     const mat = new THREE.MeshLambertMaterial({ color: PHASE_COLORS[ph], transparent: true });
     const mesh = new THREE.InstancedMesh(new THREE.BoxGeometry(0.96, 0.96, 0.96), mat, pts.length / 3);
+    mesh.frustumCulled = false;          // bounding sphere covers only the base box — culling would blink the whole phase out
     mesh.userData.phase = ph;
     group.add(mesh);
   }
@@ -665,6 +667,7 @@ function buildGroup(run, isRunA){
     depthWrite: false, blending: THREE.AdditiveBlending, sizeAttenuation: true
   });
   const tpbPts = new THREE.Points(tpbGeo, tpbMat);
+  tpbPts.frustumCulled = false;          // positions are rewritten on cutaway; stale sphere would cull them
   group.add(tpbPts);
   group.userData = { lists, tpbPts, tpbBase: isRunA ? 1.0 : 1.5, tpbList };
   scene.add(group);
@@ -779,7 +782,9 @@ const pMat = new THREE.PointsMaterial({
   size: 1.9, map: dotTex, vertexColors: true, transparent: true,
   depthWrite: false, blending: THREE.AdditiveBlending, sizeAttenuation: true
 });
-scene.add(new THREE.Points(pGeo, pMat));
+const pPts = new THREE.Points(pGeo, pMat);
+pPts.frustumCulled = false;              // sphere is baked from placeholder positions on first render — would cull particles forever
+scene.add(pPts);
 
 const COL = {
   gas:   new THREE.Color(0x5ec8f8),
@@ -798,6 +803,7 @@ for(let i=0;i<12;i++){
     new THREE.SphereGeometry(0.7, 12, 12),
     new THREE.MeshBasicMaterial({ color: 0xffb347, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false })
   );
+  m.frustumCulled = false;               // flashes teleport between TPB sites every reaction
   scene.add(m);
   flashes.push({ m, life: 0, max: 0.5 });
 }
