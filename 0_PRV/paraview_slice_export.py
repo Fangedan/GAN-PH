@@ -23,6 +23,18 @@ Replicates, step for step, the process in
   10. File > Save Animation (512x512 borderless; Juan's manual was 500x500
       with a background border -- exact framing supersedes that)
 
+CAMERA FIX (2026-06)
+--------------------
+The previous version relied on ResetActiveCameraToPositiveX() + ResetCamera()
+to centre the view, then overrode only CameraParallelScale. That works on a
+STRUCTURED_POINTS cube with origin 0 (the synthetic test case), but on a real
+DREAM.3D RECTILINEAR_GRID (e.g. Juan's m_.vtk: 167^3 cells, coords -0.075..24.975)
+the reset left the focal point at the global origin (0,0,0) with the parallel
+scale at the full extent instead of half -- so the structure rendered at half
+scale in the top-right quadrant. frame_camera() now pins focal point, position,
+view-up AND parallel scale explicitly from the data bounds, so nothing relies on
+an automatic reset that behaves differently per dataset type.
+
 USAGE (must be run with ParaView's pvpython, NOT regular python):
 
   Windows:
@@ -34,12 +46,12 @@ USAGE (must be run with ParaView's pvpython, NOT regular python):
   By default --start/--end are computed automatically from the data bounds
   (first/last slice positions are half a slice-step inside the volume, which
   is exactly how Juan's 0.2 and 24.8 arise for a 0-25 micron volume at 70
-  frames). --frames defaults to 70.
+  frames). --frames defaults to 64.
 
   Batch a whole folder of VTK files:
     pvpython paraview_slice_export.py vtk_folder/ -o all_slices
 
-Output: <outdir>/<name>.0000.png ... <name>.0069.png  (500x500 by default)
+Output: <outdir>/<name>.0000.png ... <name>.0063.png  (512x512 by default)
 """
 
 import argparse
@@ -129,27 +141,39 @@ def setup_categorical_lut(array_name, value_range):
     return lut
 
 
-def look_down_positive_x(view):
-    """Equivalent of the GUI '+X' camera button, then 'Zoom Closest To Data'."""
-    try:
-        pvs.ResetActiveCameraToPositiveX()
-    except AttributeError:
-        # Manual fallback for older APIs
-        fp = view.CameraFocalPoint[:]
-        view.CameraPosition = [fp[0] + 1.0, fp[1], fp[2]]
-        view.CameraFocalPoint = fp
-        view.CameraViewUp = [0.0, 0.0, 1.0]
-    # "Zoom Closest To Data" (tight fit). Fall back to a normal reset.
-    try:
-        view.ResetCamera(True)
-    except TypeError:
-        ResetCamera(view)
+def frame_camera(view, bounds):
+    """Pin the +X parallel-projection camera EXPLICITLY from the data bounds.
+
+    Replaces the old look_down_positive_x() + ResetCamera() approach, which
+    relied on ParaView's automatic reset to centre the view. That reset does
+    not behave the same across dataset types: on a RECTILINEAR_GRID it left the
+    focal point at the global origin and the parallel scale at the full extent,
+    so the slice rendered at half scale in a corner. Setting focal point,
+    position, view-up and parallel scale ourselves removes that dependency.
+
+    Looking down -X (camera on the +X side), view-up +Z. The visible plane is
+    Y-Z, so CameraParallelScale = half the Y/Z extent makes the slice fill the
+    square viewport edge to edge (borderless; at --resolution 512 that is
+    exactly 8 px per voxel of a 64^3 structure).
+    """
+    cx = 0.5 * (bounds[0] + bounds[1])
+    cy = 0.5 * (bounds[2] + bounds[3])
+    cz = 0.5 * (bounds[4] + bounds[5])
+    diag = max(bounds[1] - bounds[0], bounds[3] - bounds[2], bounds[5] - bounds[4])
+
+    view.CameraParallelProjection = 1
+    view.CameraFocalPoint = [cx, cy, cz]              # centre on data, NOT origin
+    view.CameraPosition = [cx + 2.0 * diag, cy, cz]   # look down -X from the +X side
+    view.CameraViewUp = [0.0, 0.0, 1.0]               # +Z is up
+    view.CameraParallelScale = 0.5 * max(bounds[3] - bounds[2],
+                                         bounds[5] - bounds[4])
 
 
 def process_one(vtk_path, out_dir, args):
     # paraview.simple auto-resets the camera on the FIRST Render() call,
-    # silently discarding any camera state set before it. Disable that, and
-    # belt-and-suspenders: re-assert the framing after the first render too.
+    # silently discarding any camera state set before it. Disable that; we also
+    # re-assert frame_camera() after the animation is built (below) so nothing
+    # an automatic reset might do can survive into the saved frames.
     try:
         pvs._DisableFirstRenderCameraReset()
     except Exception:
@@ -212,18 +236,10 @@ def process_one(vtk_path, out_dir, args):
         view.BackgroundColorMode = "Single Color"
         view.Background = args.background
 
-    look_down_positive_x(view)
-    # Exact-fit framing: parallel scale = half the data's vertical extent, so
-    # the slice fills the viewport edge to edge. No background border, and at
-    # --resolution 512 each voxel maps to exactly 8x8 px. This removes the
-    # sub-pixel framing nondeterminism of plain ResetCamera (measured: content
-    # box drifted between 354 and 360 px across runs), which leaked background
-    # into downstream fixed-border cropping.
-    half = 0.5 * max(bounds[3] - bounds[2], bounds[5] - bounds[4])
-    view.CameraParallelScale = half
-    Render(view)
-    # Re-assert after the first render in case an automatic reset fired anyway
-    view.CameraParallelScale = half
+    # Exact-fit framing, pinned explicitly from the data bounds (see
+    # frame_camera docstring). This is the fix for the "half-size in the
+    # corner" bug on RECTILINEAR_GRID volumes.
+    frame_camera(view, bounds)
     Render(view)
 
     # --- Steps 8-9: animate Slice Offset Values (ContourValues) --------
@@ -244,6 +260,13 @@ def process_one(vtk_path, out_dir, args):
     kf0 = CompositeKeyFrame(KeyTime=0.0, KeyValues=[start], Interpolation="Ramp")
     kf1 = CompositeKeyFrame(KeyTime=1.0, KeyValues=[end])
     track.KeyFrames = [kf0, kf1]
+
+    # Re-assert the framing AFTER the animation is configured and right before
+    # saving, in case building the scene / first playback render triggered an
+    # automatic camera reset. Render twice so the state is committed.
+    frame_camera(view, bounds)
+    Render(view)
+    Render(view)
 
     # --- Step 10: Save Animation as PNG sequence -----------------------
     if not os.path.isdir(out_dir):
