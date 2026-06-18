@@ -26,7 +26,7 @@ Based on the paper:
 |----------|--------------|
 | **`0_PRV/`** — ParaView automation | Replaces a manual ParaView workflow with one script (`paraview_slice_export.py`) that turns a DREAM.3D `.vtk` volume into a slice-image stack. Verified lossless end-to-end against ground truth. |
 | **`4_CNNCT/`** — connectivity & TPB analysis | New module measuring pore/Ni/YSZ percolation, active triple-phase-boundary (TPB) density, tortuosity, and Yu et al. S-values — the transport descriptors the original pipeline never checked. |
-| **Differentiable connectivity loss** (`1_GAN/training.py`) | A new generator loss term (isolation penalty + face hinge) that fixes systematic pore collapse. Pore-connectivity S-value improved **0.48 → 0.90**, active-TPB **0.59 → 0.86** (both FAIL → OK). |
+| **Differentiable connectivity loss** (`1_GAN/training.py`) | A new generator loss term (isolation penalty + face hinge) that fixes systematic pore collapse on synthetic data — pore-connectivity S-value **0.48 → 0.90**, active-TPB **0.59 → 0.86** (FAIL → OK). A real-data ablation shows it's unnecessary where a phase already percolates (see Key Results). |
 | **`preprocess_dream3d.py`** | Converts DREAM.3D PNG exports into the BMP voxel-stack format the GAN expects. Replaces an existing MATLAB workflow. |
 
 ---
@@ -232,7 +232,26 @@ python 4_CNNCT/analyze.py --input ../synthetic_data --compare ../generated_data 
 
 ## Key Results
 
-Connectivity loss, evaluated on 50 generated structures vs 50 synthetic training structures (S-values, Yu et al. 2025):
+### Real DREAM.3D data — first end-to-end validation
+
+The full pipeline was run on **101 real Ni-YSZ microstructures** (DREAM.3D FIB-SEM exports, phase fractions ~Ni 23% / YSZ 21% / Pore 56%). 100 structures were generated, conditioned on the real (VF, SSA) labels, and compared to the training set with Yu et al. S-values:
+
+| Metric | S-value | Interpretation |
+|--------|---------|----------------|
+| Ni connectivity | **0.905** | OK |
+| Pore connectivity | **0.872** | OK |
+| YSZ connectivity | 0.715 | Marginal |
+| Total TPB density | 0.713 | Marginal |
+| Active TPB density | 0.735 | Marginal |
+| Active TPB fraction | 0.745 | Marginal |
+
+- **No phase collapsed** — every generated structure percolates in pore, the failure mode the original model produced 47/50 of the time on synthetic data.
+- **Ni and pore connectivity reproduced the real material in the OK band**, and notably **Ni connectivity was never a training target** — it emerged from learning the real distribution.
+- The marginal metrics are driven by *distribution shape*, not fragmentation: the generator produces more consistent, better-connected structures than the real set, which contains a low tail of defective structures (some with non-percolating YSZ, likely a 167³→64³ downsampling artifact). The S-value penalizes that mismatch even though the generated structures are, if anything, "too clean."
+
+### Connectivity loss on synthetic data — fixing pore collapse
+
+On synthetic sphere-packed data, the differentiable connectivity loss fixed a systematic pore-collapse failure (S-values, 50 generated vs 50 training):
 
 | Metric | Before | After | |
 |--------|--------|-------|---|
@@ -241,15 +260,17 @@ Connectivity loss, evaluated on 50 generated structures vs 50 synthetic training
 | Total TPB density | 0.610 | **0.867** | FAIL → OK |
 | YSZ connectivity | 0.773 | **0.889** | MARGINAL → OK |
 
-- Before the fix, **47 of 50** generated structures had zero percolating pore; active TPB was ~60× below training data (0.009 vs 0.526 µm⁻²).
-- After the fix, all 50 structures have pore connectivity > 0.85; active-TPB mean rose to 0.575 µm⁻², matching the training distribution.
+Before the fix, **47 of 50** generated structures had zero percolating pore and active TPB was ~60× below training data (0.009 vs 0.526 µm⁻²). After it, all 50 percolate.
 
-The base model additionally:
+### When the connectivity loss helps — and when it doesn't (ablation)
+
+Extending the connectivity loss to the **Ni** phase and retraining on real data (controlled ablation, all else equal) **lowered** the Ni S-value from 0.905 to **0.752**. The term did what it was designed to do — generated Ni connectivity rose from ~0.91 to ~0.95 — but on real data Ni *already* percolated, so pushing it harder overshot the real distribution and hurt fidelity. The takeaway: a connectivity loss is valuable where a phase genuinely collapses (synthetic data), but is unnecessary or counterproductive where the phase already percolates (this real data). Connectivity was not the binding constraint on the real set.
+
+### Base model
+
 - Generates 64×64×64 structures visually indistinguishable from real ones, controlling volume fraction and specific surface area independently.
 - Captures hidden topological characteristics validated via persistent-homology PCA.
 - Scales to larger output sizes (96³, 128³, 256³) without retraining.
-
-> Current results are on synthetic sphere-packed data; validation on real DREAM.3D structures is in progress.
 
 ---
 
