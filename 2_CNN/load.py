@@ -45,7 +45,7 @@ def load_structure(n_struc,n_size,Input_header):
 
         # step.1 Load data
         for j in range(n_size):
-            path = os.path.join(Input_header,"structure_{:04}\slice_{:04}.bmp".format(i+1,j))
+            path = os.path.join(Input_header, "structure_{:04}".format(i+1), "slice_{:04}.bmp".format(j))
             # path = Input_header.joinpath("structure_{:04}\out_{:04}.bmp".format(i+1,j))
             img = cv2.imread(path,cv2.IMREAD_GRAYSCALE) 
             # img = cv2.imread(str(path),cv2.IMREAD_GRAYSCALE) 
