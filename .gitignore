@@ -59,6 +59,12 @@ desktop.ini
  # 0_ParaView test artifacts (regenerable, large)
 0_PRV/*.vtk
 0_PRV/*_slices/
-0_PRV/test_slices/
+0_PRV/test_slices*/
 0_PRV/test_preprocess_out/
 0_PRV/__pycache__/
+# ── Additional data/output folders ──
+generated_data_*/
+1_GAN/save_model_*/
+4_CNNCT/s_values*.csv
+4_CNNCT/*_connectivity.csv
+4_CNNCT/__pycache__/
