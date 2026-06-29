@@ -68,3 +68,4 @@ generated_data_*/
 4_CNNCT/s_values*.csv
 4_CNNCT/*_connectivity.csv
 4_CNNCT/__pycache__/
+1_GAN/log.dat
