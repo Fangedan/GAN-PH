@@ -54,11 +54,11 @@ class Trainer():
         }
 
         # ----- Hyper Parameters ----- #
-        self.w_gp        = 10      # Weight for gradient penalty
+        self.w_gp        = 20      # Weight for gradient penalty
         self.w_param     = 1000    # Weight for volume fraction and specific surface area
         self.n_critic    = 1       # Number of critic iterations per generator update
         self.save_epoch  = 1       # Save model per epoch
-        self.timing      = 10      # Epoch at which SSA loss is added to G_loss
+        self.timing      = 9999    # Epoch at which SSA loss is added to G_loss
         self.latent_size = 100     # Latent noise vector size
 
         # NEW: Pore connectivity loss weight
