@@ -2,7 +2,7 @@
 test_preprocess.py
 ==================
 Standalone test harness for preprocess_dream3d.py.
-Covers four scenarios without requiring Juan's real data:
+Covers four scenarios without requiring real data:
 
   1. RESIZE mode  — small stack  (50 slices, 500x500 px → 1 structure)
   2. TILE-XY mode — large stack  (64 slices, 500x500 px → 49 structures)

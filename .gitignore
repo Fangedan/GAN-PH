@@ -66,6 +66,11 @@ desktop.ini
 generated_data_*/
 1_GAN/save_model_*/
 4_CNNCT/s_values*.csv
+4_CNNCT/s_value_report*.csv
 4_CNNCT/*_connectivity.csv
 4_CNNCT/__pycache__/
 1_GAN/log.dat
+# ── 5_TAU pipeline outputs (large / generated) ──
+5_TAU/save_model/
+5_TAU/tau_labels.csv
+5_TAU/__pycache__/

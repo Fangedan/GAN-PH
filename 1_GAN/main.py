@@ -13,6 +13,8 @@
 # default ../ paths resolve), exactly as before.
 
 import argparse
+import json
+import sys
 from pathlib import Path
 
 import torch
@@ -21,6 +23,9 @@ import torch.optim as optim
 import load
 import models
 import training
+
+# τ-net is in 5_TAU/ — add to path only when needed (see load block below)
+_TAU_NET_DIR = Path(__file__).parent.parent / "5_TAU"
 
 
 def count_structures(data_dir: Path) -> int:
@@ -72,6 +77,16 @@ def parse_args():
         help="Path to the frozen SSA estimator weights "
              "(default: ../2_CNN/save_model/model_200epoch.pth).",
     )
+    p.add_argument(
+        "--tau-estimator", type=Path, default=None,
+        help="Path to frozen τ-net weights (5_TAU/save_model/tau_net.pth). "
+             "If omitted, tortuosity loss is disabled.",
+    )
+    p.add_argument(
+        "--tau-targets", type=Path, default=None,
+        help="JSON produced by compute_tau_labels.py with mean τ per phase "
+             "(5_TAU/tau_targets.json). Required when --tau-estimator is set.",
+    )
     return p.parse_args()
 
 
@@ -96,13 +111,14 @@ def main():
     print("=" * 60)
     print(" GAN-PH  —  WGAN-GP training")
     print("=" * 60)
-    print(f"  data        : {args.data}  ({n_struc} structures)")
-    print(f"  batch size  : {args.batch_size}")
-    print(f"  epochs      : {args.epochs}")
-    print(f"  lr          : {args.lr}")
-    print(f"  seed        : {args.seed}")
-    print(f"  estimator   : {args.estimator}")
-    print(f"  device      : {device}")
+    print(f"  data          : {args.data}  ({n_struc} structures)")
+    print(f"  batch size    : {args.batch_size}")
+    print(f"  epochs        : {args.epochs}")
+    print(f"  lr            : {args.lr}")
+    print(f"  seed          : {args.seed}")
+    print(f"  estimator     : {args.estimator}")
+    print(f"  tau-estimator : {args.tau_estimator or 'disabled'}")
+    print(f"  device        : {device}")
     print("=" * 60)
 
     load.torch_fix_seed(args.seed)
@@ -123,6 +139,44 @@ def main():
     )
     estimator.eval()
 
+    # ---- Load τ-net (optional, frozen) ---- #
+    # Gradient flows THROUGH tau_net to the generator — see training._loss_tortuosity.
+    # Weights are frozen in Trainer.__init__; no_grad is NOT used in the loss.
+    tau_net     = None
+    tau_targets = None
+    if args.tau_estimator is not None:
+        if not args.tau_estimator.exists():
+            raise FileNotFoundError(
+                f"τ-net weights not found: {args.tau_estimator}\n"
+                "Train it first: cd 5_TAU && python train_tau_net.py ..."
+            )
+        if args.tau_targets is None or not args.tau_targets.exists():
+            raise FileNotFoundError(
+                "--tau-targets JSON required when --tau-estimator is set.\n"
+                "Run compute_tau_labels.py to produce tau_targets.json."
+            )
+        sys.path.insert(0, str(_TAU_NET_DIR))
+        from tau_net import TauNet   # type: ignore[import]  — runtime path
+        tau_net = TauNet(ndf=16).to(device)
+        tau_net.load_state_dict(
+            torch.load(str(args.tau_estimator), map_location=device)
+        )
+        with open(args.tau_targets) as f:
+            raw = json.load(f)
+        # Use log-scale targets (key "log_Ni" etc.) because tau_net is trained on log(τ).
+        # mean(log(τ_real)) is stored in the JSON by compute_tau_labels.py.
+        # Fall back to log(raw mean) if log keys are missing (backward compat).
+        import math as _math
+        tau_targets = {}
+        for ph in ("Ni", "YSZ", "Pore"):
+            log_val = raw.get(f"log_{ph}")
+            if log_val is None:
+                raw_val = raw.get(ph)
+                log_val = _math.log(raw_val) if raw_val else None
+            if log_val is not None:
+                tau_targets[ph] = float(log_val)
+        print(f"  τ log-targets: { {k: f'{v:.4f}' for k, v in tau_targets.items()} }")
+
     # ---- Build Generator and Critic ---- #
     generator = models.Generator(latent_size=100).to(device)
     generator.apply(models.weights_init)
@@ -136,15 +190,17 @@ def main():
 
     # ---- Train ---- #
     trainer = training.Trainer(
-        model_g    = generator,
-        optim_g    = opt_g,
-        model_c    = critic,
-        optim_c    = opt_c,
-        model_e    = estimator,
-        epochs     = args.epochs,
-        device     = device,
-        dataloader = train_loader,
-        in_header  = str(args.data),
+        model_g      = generator,
+        optim_g      = opt_g,
+        model_c      = critic,
+        optim_c      = opt_c,
+        model_e      = estimator,
+        epochs       = args.epochs,
+        device       = device,
+        dataloader   = train_loader,
+        in_header    = str(args.data),
+        tau_net      = tau_net,
+        tau_targets  = tau_targets,
     )
     trainer.train()
 

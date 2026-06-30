@@ -69,7 +69,7 @@ class LoadStructure:
             imgs = np.zeros([n_size,n_size,n_size]).astype(np.float32)
 
             for j in range(n_size):
-                img = cv2.imread(os.path.join(self.header, r"structure_{:04}\slice_{:04}.bmp".format(i+1,j)), 
+                img = cv2.imread(os.path.join(self.header, "structure_{:04}".format(i+1), "slice_{:04}.bmp".format(j)),
                                 cv2.IMREAD_GRAYSCALE)
                 img = cv2.resize(img, (n_size,n_size), interpolation=cv2.INTER_NEAREST)
                 imgs[j] = img

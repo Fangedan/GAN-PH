@@ -31,7 +31,8 @@ from torch import autograd
 
 
 class Trainer():
-    def __init__(self, model_g, optim_g, model_c, optim_c, model_e, epochs, device, dataloader, in_header):
+    def __init__(self, model_g, optim_g, model_c, optim_c, model_e, epochs, device, dataloader, in_header,
+                 tau_net=None, tau_targets=None):
 
         self.generator  = model_g       # Generator
         self.opt_g      = optim_g       # Optimizer for Generator
@@ -43,6 +44,16 @@ class Trainer():
         self.dataloader = dataloader    # Dataloader
         self.header     = in_header     # Header of input data
 
+        # τ-net surrogate for tortuosity loss (optional; None = loss disabled)
+        self.tau_net     = tau_net
+        self.tau_targets = tau_targets or {}   # {'Ni': float, 'YSZ': float, 'Pore': float}
+        if tau_net is not None:
+            # Freeze weights — gradients flow THROUGH tau_net to g_data (no no_grad here),
+            # but tau_net parameters themselves are never updated by the generator optimizer.
+            for p in tau_net.parameters():
+                p.requires_grad_(False)
+            tau_net.eval()
+
         self.losses = {
             "G_loss":    [],
             "D_loss":    [],
@@ -50,7 +61,8 @@ class Trainer():
             "Wasser_d":  [],
             "vf_loss":   [],
             "ssa_loss":  [],
-            "conn_loss": [],   # NEW: pore connectivity penalty
+            "conn_loss": [],   # pore connectivity penalty
+            "tau_loss":  [],   # tortuosity surrogate loss (empty when tau_net=None)
         }
 
         # ----- Hyper Parameters ----- #
@@ -72,6 +84,14 @@ class Trainer():
         # Decrease w_conn (e.g. 20) if training becomes unstable.
         # Increase w_conn (e.g. 100) if pore still collapses after retraining.
         self.w_conn = 50
+
+        # Tortuosity surrogate loss weight.
+        # If τ_pred MSE ≈ 0.25 (half a τ unit off per phase), then
+        # w_tau=50 contributes ~12 to G_loss — similar scale to connectivity.
+        # Tune up if tau S-values don't improve; tune down if training destabilizes.
+        # tau_timing: epoch at which τ loss is added (let structure form first).
+        self.w_tau      = 50
+        self.tau_timing = 10
 
     # ── Original methods (unchanged) ──────────────────────────────────────────
 
@@ -102,23 +122,24 @@ class Trainer():
         :param itr   : number of iteration
         """
         conn = self.losses["conn_loss"][-1] if self.losses["conn_loss"] else 0.0
+        tau  = self.losses["tau_loss"][-1]  if self.losses["tau_loss"]  else 0.0
 
         print("[{:03}/{:03}][{:03}/{:03}] G_loss: {:.04f} D_loss: {:.04f} "
-              "Wasser_D: {:.04f} conn_loss: {:.04f}".format(
+              "Wasser_D: {:.04f} conn_loss: {:.04f} tau_loss: {:.04f}".format(
             epoch + 1, self.n_epoch, itr + 1, len(self.dataloader),
             self.losses["G_loss"][-1], self.losses["D_loss"][-1],
-            self.losses["Wasser_d"][-1], conn
+            self.losses["Wasser_d"][-1], conn, tau
         ))
 
         file = open("./log.dat", "a")
         file.write(
             "[{:03}/{:03}][{:03}/{:03}] G_loss: {:.04f} D_loss: {:.04f} "
             "Wasser_D: {:.04f} vf_loss: {:.04} ssa_loss: {:.04} "
-            "gp_loss: {:.04} conn_loss: {:.04}\n".format(
+            "gp_loss: {:.04} conn_loss: {:.04} tau_loss: {:.04}\n".format(
                 epoch + 1, self.n_epoch, itr + 1, len(self.dataloader),
                 self.losses["G_loss"][-1], self.losses["D_loss"][-1],
                 self.losses["Wasser_d"][-1], self.losses["vf_loss"][-1],
-                self.losses["ssa_loss"][-1], self.losses["gp_loss"][-1], conn
+                self.losses["ssa_loss"][-1], self.losses["gp_loss"][-1], conn, tau
             )
         )
         file.close()
@@ -354,6 +375,45 @@ class Trainer():
         self.losses["conn_loss"].append(loss_conn.item())
         return loss_conn
 
+    def _loss_tortuosity(self, g_data):
+        """
+        Differentiable tortuosity penalty via frozen τ-net surrogate.
+
+        KEY DESIGN INVARIANT — do not break:
+          NO torch.no_grad() wrapper here, NO g_data.detach().
+          The τ-net parameters are frozen (requires_grad=False, set in __init__),
+          but the FORWARD PASS is tracked by autograd. Gradients flow:
+            tau_loss → tau_pred → g_data → generator weights  ✓
+          Wrapping in no_grad() would sever this path (that's BUG 1 in _loss_ssa).
+
+        Loss: MSE between τ-net output and mean(log(τ_real)) per phase,
+        averaged over the three phases. Phases with None targets are skipped.
+        Both tau_net and the targets in tau_targets operate in log(τ) space
+        (tau_net was trained on log(τ) labels; targets are mean(log(τ_real)),
+        NOT log(mean(τ_real)) — these differ for skewed distributions like τ_YSZ).
+
+        :param g_data: (b, 3, 64, 64, 64) softmax probabilities [Ni, YSZ, Pore]
+        :return: scalar τ loss (torch.Tensor with grad)
+        """
+        phases   = [("Ni", 0), ("YSZ", 1), ("Pore", 2)]
+        terms    = []
+        for ph_name, ch in phases:
+            target = self.tau_targets.get(ph_name)
+            if target is None:
+                continue
+            phase_prob = g_data[:, ch:ch+1, :, :, :]    # (b, 1, 64, 64, 64)
+            tau_pred   = self.tau_net(phase_prob)         # (b,)
+            target_t   = torch.tensor(target, dtype=tau_pred.dtype,
+                                      device=g_data.device)
+            terms.append(torch.mean((tau_pred - target_t) ** 2))
+
+        if not terms:
+            return torch.zeros(1, device=g_data.device).squeeze()
+
+        tau_loss = sum(terms) / len(terms)
+        self.losses["tau_loss"].append(tau_loss.item())
+        return tau_loss
+
     # ── Original methods (unchanged) ──────────────────────────────────────────
 
     def _fixed_labels(self):
@@ -484,6 +544,13 @@ class Trainer():
                         G_loss = (g_loss
                                   + self.w_param * loss_vf
                                   + self.w_conn  * loss_conn)
+
+                    # τ loss: added after tau_timing epochs, only when tau_net loaded.
+                    # Delayed start lets the generator form recognizable structures
+                    # before the τ gradient is meaningful.
+                    if self.tau_net is not None and epoch >= self.tau_timing:
+                        loss_tau = self._loss_tortuosity(g_data)
+                        G_loss   = G_loss + self.w_tau * loss_tau
 
                     self.losses["G_loss"].append(G_loss.item())
                     G_loss.backward()
