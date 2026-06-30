@@ -55,14 +55,15 @@ class Trainer():
             tau_net.eval()
 
         self.losses = {
-            "G_loss":    [],
-            "D_loss":    [],
-            "gp_loss":   [],
-            "Wasser_d":  [],
-            "vf_loss":   [],
-            "ssa_loss":  [],
-            "conn_loss": [],   # pore connectivity penalty
-            "tau_loss":  [],   # tortuosity surrogate loss (empty when tau_net=None)
+            "G_loss":        [],
+            "D_loss":        [],
+            "gp_loss":       [],
+            "Wasser_d":      [],
+            "vf_loss":       [],
+            "ssa_loss":      [],
+            "conn_loss":     [],   # pore connectivity penalty
+            "conn_ysz_loss": [],   # YSZ percolation proxy (new)
+            "tau_loss":      [],   # tortuosity surrogate loss (empty when tau_net=None)
         }
 
         # ----- Hyper Parameters ----- #
@@ -84,6 +85,13 @@ class Trainer():
         # Decrease w_conn (e.g. 20) if training becomes unstable.
         # Increase w_conn (e.g. 100) if pore still collapses after retraining.
         self.w_conn = 50
+
+        # YSZ percolation proxy loss weight.
+        # Raw loss magnitude ≤ threshold (0.1) since it's a mean of ReLU clips.
+        # w_conn_ysz=200 → maximum contribution ≈ 20 to G_loss.
+        # Real YSZ vf ≈ 0.20, so threshold=0.10 fires when any z-slice drops
+        # below 50% of expected density — a generous safety margin.
+        self.w_conn_ysz = 200
 
         # Tortuosity surrogate loss weight.
         # If τ_pred MSE ≈ 0.25 (half a τ unit off per phase), then
@@ -121,25 +129,26 @@ class Trainer():
         :param epoch : number of epoch
         :param itr   : number of iteration
         """
-        conn = self.losses["conn_loss"][-1] if self.losses["conn_loss"] else 0.0
-        tau  = self.losses["tau_loss"][-1]  if self.losses["tau_loss"]  else 0.0
+        conn     = self.losses["conn_loss"][-1]     if self.losses["conn_loss"]     else 0.0
+        conn_ysz = self.losses["conn_ysz_loss"][-1] if self.losses["conn_ysz_loss"] else 0.0
+        tau      = self.losses["tau_loss"][-1]       if self.losses["tau_loss"]      else 0.0
 
         print("[{:03}/{:03}][{:03}/{:03}] G_loss: {:.04f} D_loss: {:.04f} "
-              "Wasser_D: {:.04f} conn_loss: {:.04f} tau_loss: {:.04f}".format(
+              "Wasser_D: {:.04f} conn: {:.04f} conn_ysz: {:.04f} tau: {:.04f}".format(
             epoch + 1, self.n_epoch, itr + 1, len(self.dataloader),
             self.losses["G_loss"][-1], self.losses["D_loss"][-1],
-            self.losses["Wasser_d"][-1], conn, tau
+            self.losses["Wasser_d"][-1], conn, conn_ysz, tau
         ))
 
         file = open("./log.dat", "a")
         file.write(
             "[{:03}/{:03}][{:03}/{:03}] G_loss: {:.04f} D_loss: {:.04f} "
             "Wasser_D: {:.04f} vf_loss: {:.04} ssa_loss: {:.04} "
-            "gp_loss: {:.04} conn_loss: {:.04} tau_loss: {:.04}\n".format(
+            "gp_loss: {:.04} conn_loss: {:.04} conn_ysz_loss: {:.04} tau_loss: {:.04}\n".format(
                 epoch + 1, self.n_epoch, itr + 1, len(self.dataloader),
                 self.losses["G_loss"][-1], self.losses["D_loss"][-1],
                 self.losses["Wasser_d"][-1], self.losses["vf_loss"][-1],
-                self.losses["ssa_loss"][-1], self.losses["gp_loss"][-1], conn, tau
+                self.losses["ssa_loss"][-1], self.losses["gp_loss"][-1], conn, conn_ysz, tau
             )
         )
         file.close()
@@ -375,6 +384,34 @@ class Trainer():
         self.losses["conn_loss"].append(loss_conn.item())
         return loss_conn
 
+    def _loss_connectivity_ysz(self, g_data):
+        """
+        Differentiable YSZ percolation proxy.
+
+        YSZ must be present at every z-slice for a percolating path to exist
+        from z=0 to z=63. When any z-slice has near-zero YSZ, taufactor
+        returns NaN (unconverged) and the tau_net gradient carries no useful
+        signal for those samples.
+
+        Loss: for each (batch, z-slice), compute mean YSZ probability across
+        the YX plane, then penalize slices below threshold via hinge/ReLU:
+
+            loss = mean over (batch, z) of ReLU(threshold - mean_ysz_yx)
+
+        threshold=0.10 fires when a z-slice has less than 10% mean YSZ
+        probability (real YSZ vf ≈ 0.20, so this allows 50% drop before
+        firing, i.e. a gentle nudge rather than a hard constraint).
+
+        :param g_data: (B, 3, 64, 64, 64) softmax probabilities [Ni, YSZ, Pore]
+        :return: scalar loss in [0, threshold]
+        """
+        ysz = g_data[:, 1, :, :, :]              # (B, Z, Y, X)
+        slice_means = ysz.mean(dim=(2, 3))         # (B, Z) — mean YSZ per z-slice
+        threshold   = 0.10
+        loss = F.relu(threshold - slice_means).mean()
+        self.losses["conn_ysz_loss"].append(loss.item())
+        return loss
+
     def _loss_tortuosity(self, g_data):
         """
         Differentiable tortuosity penalty via frozen τ-net surrogate.
@@ -388,9 +425,13 @@ class Trainer():
 
         Loss: MSE between τ-net output and mean(log(τ_real)) per phase,
         averaged over the three phases. Phases with None targets are skipped.
-        Both tau_net and the targets in tau_targets operate in log(τ) space
-        (tau_net was trained on log(τ) labels; targets are mean(log(τ_real)),
-        NOT log(mean(τ_real)) — these differ for skewed distributions like τ_YSZ).
+        Both tau_net and the targets in tau_targets operate in log(τ) space.
+
+        YSZ gating: tau_net gives meaningless gradients when YSZ doesn't
+        percolate (taufactor would return NaN). We gate YSZ tau loss to only
+        the batch samples where min z-slice mean > 0.05, excluding disconnected
+        samples from the MSE. This prevents noisy gradients from polluting the
+        generator update when YSZ is fragmented.
 
         :param g_data: (b, 3, 64, 64, 64) softmax probabilities [Ni, YSZ, Pore]
         :return: scalar τ loss (torch.Tensor with grad)
@@ -402,9 +443,22 @@ class Trainer():
             if target is None:
                 continue
             phase_prob = g_data[:, ch:ch+1, :, :, :]    # (b, 1, 64, 64, 64)
-            tau_pred   = self.tau_net(phase_prob)         # (b,)
-            target_t   = torch.tensor(target, dtype=tau_pred.dtype,
+            target_t   = torch.tensor(target, dtype=g_data.dtype,
                                       device=g_data.device)
+
+            if ph_name == "YSZ":
+                # Gate: only compute tau loss for connected samples.
+                # min_slice < 0.05 means some z-slice has nearly no YSZ →
+                # taufactor would not converge → tau_net gradient is noise.
+                ysz_plane  = phase_prob[:, 0, :, :, :]              # (B, Z, Y, X)
+                min_slice  = ysz_plane.mean(dim=(2, 3)).min(dim=1).values  # (B,)
+                connected  = min_slice > 0.05                        # (B,) bool
+                if not connected.any():
+                    continue
+                tau_pred = self.tau_net(phase_prob[connected])       # (n_conn,)
+            else:
+                tau_pred = self.tau_net(phase_prob)                  # (b,)
+
             terms.append(torch.mean((tau_pred - target_t) ** 2))
 
         if not terms:
@@ -527,23 +581,25 @@ class Trainer():
                 if iters % self.n_critic == 0:
                     self.opt_g.zero_grad()
                     g_data    = self._sample_generator(r_vf, r_ssa, b_len)
-                    loss_vf   = self._loss_vf(b_len, g_data, r_vf)
-                    loss_ssa  = self._loss_ssa(b_len, g_data, r_ssa, mm_list)
-                    loss_conn = self._loss_connectivity(g_data)   # NEW
+                    loss_vf       = self._loss_vf(b_len, g_data, r_vf)
+                    loss_ssa      = self._loss_ssa(b_len, g_data, r_ssa, mm_list)
+                    loss_conn     = self._loss_connectivity(g_data)
+                    loss_conn_ysz = self._loss_connectivity_ysz(g_data)
 
                     g_loss = -self.critic(g_data).mean()
 
-                    # MODIFIED: connectivity loss added to both branches.
-                    # conn_loss runs from epoch 0 — pore collapse happens early
-                    # and needs to be prevented before it becomes entrenched.
+                    # Both connectivity losses run from epoch 0 — phase collapse
+                    # happens early and must be prevented before it entrenches.
                     if epoch >= self.timing:
                         G_loss = (g_loss
-                                  + self.w_param * (loss_vf + loss_ssa)
-                                  + self.w_conn  * loss_conn)
+                                  + self.w_param    * (loss_vf + loss_ssa)
+                                  + self.w_conn     * loss_conn
+                                  + self.w_conn_ysz * loss_conn_ysz)
                     else:
                         G_loss = (g_loss
-                                  + self.w_param * loss_vf
-                                  + self.w_conn  * loss_conn)
+                                  + self.w_param    * loss_vf
+                                  + self.w_conn     * loss_conn
+                                  + self.w_conn_ysz * loss_conn_ysz)
 
                     # τ loss: added after tau_timing epochs, only when tau_net loaded.
                     # Delayed start lets the generator form recognizable structures
