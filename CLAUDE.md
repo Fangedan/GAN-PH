@@ -205,24 +205,64 @@ On CPU this takes ~60–90 minutes for 50 epochs.
 
 ---
 
+## Final S-value results (all three runs)
+
+| Metric | Baseline | Run 1 (tau loss) | Run 2 (+ YSZ conn) |
+|---|---|---|---|
+| tau_Ni | 0.649 FAIL | 0.770 MARGINAL | **0.818 MARGINAL** |
+| tau_YSZ | 0.484 FAIL | 0.484 FAIL | 0.479 FAIL |
+| tau_Pore | — | 0.676 FAIL | 0.688 FAIL |
+| conn_Ni | — | 0.876 OK | 0.891 OK |
+| conn_YSZ | — | 0.707 MARGINAL | 0.703 MARGINAL |
+| conn_Pore | — | 0.876 OK | 0.878 OK |
+| total_tpb | — | 0.693 FAIL | 0.689 FAIL |
+| active_tpb | — | 0.721 MARGINAL | 0.718 MARGINAL |
+| active_tpb_frac | — | 0.733 MARGINAL | 0.730 MARGINAL |
+
+Run 2 generator: `feature/ysz-connectivity-loss`, epoch 50 checkpoint.
+
 ## What still needs work
 
-After the current run completes, run S-value analysis and check:
+### tau_YSZ (stuck at ~0.48 FAIL across all runs)
 
-1. **tau_YSZ** — was FAIL (0.484). The connectivity loss + tau gate should improve
-   this. If still FAIL, consider:
-   - Increasing w_conn_ysz (try 400)
-   - Increasing w_tau for YSZ specifically (modify _loss_tortuosity to weight YSZ more)
-   - Training more epochs (100 instead of 50)
+Root cause diagnosis: The min-slice-mean connectivity loss (`_loss_connectivity_ysz`)
+barely fired during Run 2 training (conn_ysz_loss consistently < 0.001). The generator
+was already producing YSZ above the 10% density threshold at every z-slice — but as
+**topologically disconnected blobs**, not percolating channels. The metric measures
+density per slice, not connectivity between slices. taufactor still saw fragmented YSZ
+and returned high/unconverged τ values.
 
-2. **total_tpb** — was FAIL (0.693). TPB density depends on Ni-YSZ-Pore triple
-   phase boundaries. No explicit loss for this yet. If it stays FAIL, consider
-   adding a differentiable TPB proxy (count voxels adjacent to all three phases).
+Approaches to try next (in rough order of likely impact):
 
-3. **tau_Pore** — was FAIL (0.676). Pore tortuosity. Similar issue to YSZ —
-   may need a pore connectivity loss (already has face hinge but no min-slice loss).
+1. **YSZ face-hinge** (fast, try first): Require YSZ to **win** at both z=0 and z=63
+   faces, similar to pore face hinge but for YSZ. If YSZ is present at the entry/exit
+   faces and has 20% vf throughout, percolation is much more likely.
+   ```python
+   ysz = g_data[:, 1:2, :, :, :]
+   pore_ni = 1.0 - ysz  # "everything else"
+   loss_z0 = F.relu(pore_ni[:,:,0,:,:] - ysz[:,:,0,:,:] + 0.05).mean()
+   loss_z1 = F.relu(pore_ni[:,:,-1,:,:] - ysz[:,:,-1,:,:] + 0.05).mean()
+   ```
 
-4. **conn_YSZ** — was MARGINAL (0.707). Should improve with YSZ connectivity loss.
+2. **Retrain tau_net with more YSZ data** — currently τ_YSZ spans 11–214 in the
+   real data (very wide, skewed). The surrogate may be poorly calibrated in the
+   region where generated structures live. Re-check tau_labels.csv distributions.
+
+3. **Weighted tau loss** — give YSZ 3× the weight of Ni and Pore in `_loss_tortuosity`
+   since it's the hardest phase to fix.
+
+4. **More epochs** — tau_Ni improved steadily from run to run. tau_YSZ may just need
+   more training (100 epochs).
+
+5. **Differentiable TPB proxy** (also fixes total_tpb FAIL) — TPB density is
+   the density of voxels adjacent to all three phases. A differentiable proxy:
+   ```python
+   # voxel is near-TPB if all three phase probs are non-trivial
+   near_tpb = g_data[:,0] * g_data[:,1] * g_data[:,2]  # (B, 64, 64, 64)
+   tpb_density = near_tpb.mean()
+   # penalise if below real mean
+   loss_tpb = F.relu(target_tpb - tpb_density)
+   ```
 
 ---
 
