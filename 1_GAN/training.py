@@ -55,15 +55,16 @@ class Trainer():
             tau_net.eval()
 
         self.losses = {
-            "G_loss":        [],
-            "D_loss":        [],
-            "gp_loss":       [],
-            "Wasser_d":      [],
-            "vf_loss":       [],
-            "ssa_loss":      [],
-            "conn_loss":     [],   # pore connectivity penalty
-            "conn_ysz_loss": [],   # YSZ percolation proxy (new)
-            "tau_loss":      [],   # tortuosity surrogate loss (empty when tau_net=None)
+            "G_loss":            [],
+            "D_loss":            [],
+            "gp_loss":           [],
+            "Wasser_d":          [],
+            "vf_loss":           [],
+            "ssa_loss":          [],
+            "conn_loss":         [],   # pore connectivity penalty
+            "conn_ysz_loss":     [],   # YSZ min-slice density proxy
+            "conn_ysz_face_loss":[],   # YSZ face density at z=0 and z=63 (run4)
+            "tau_loss":          [],   # tortuosity surrogate loss (empty when tau_net=None)
         }
 
         # ----- Hyper Parameters ----- #
@@ -92,6 +93,14 @@ class Trainer():
         # Real YSZ vf ≈ 0.20, so threshold=0.10 fires when any z-slice drops
         # below 50% of expected density — a generous safety margin.
         self.w_conn_ysz = 200
+
+        # YSZ face-hinge loss weight (run4 addition).
+        # Requires mean YSZ probability at z=0 AND z=63 faces ≥ 0.18.
+        # Distinct from min-slice density (0.10 across all 64 slices): that loss barely
+        # fired in run2 because YSZ met 10% mean as disconnected blobs. This loss
+        # specifically targets the ENDPOINTS where taufactor's z-direction solve must
+        # enter/exit. Max contribution: 200 * (2 * 0.18) = 72 to G_loss.
+        self.w_conn_ysz_face = 200
 
         # Tortuosity surrogate loss weight.
         # If τ_pred MSE ≈ 0.25 (half a τ unit off per phase), then
@@ -130,25 +139,27 @@ class Trainer():
         :param itr   : number of iteration
         """
         conn     = self.losses["conn_loss"][-1]     if self.losses["conn_loss"]     else 0.0
-        conn_ysz = self.losses["conn_ysz_loss"][-1] if self.losses["conn_ysz_loss"] else 0.0
-        tau      = self.losses["tau_loss"][-1]       if self.losses["tau_loss"]      else 0.0
+        conn_ysz      = self.losses["conn_ysz_loss"][-1]      if self.losses["conn_ysz_loss"]      else 0.0
+        conn_ysz_face = self.losses["conn_ysz_face_loss"][-1] if self.losses["conn_ysz_face_loss"] else 0.0
+        tau           = self.losses["tau_loss"][-1]            if self.losses["tau_loss"]           else 0.0
 
         print("[{:03}/{:03}][{:03}/{:03}] G_loss: {:.04f} D_loss: {:.04f} "
-              "Wasser_D: {:.04f} conn: {:.04f} conn_ysz: {:.04f} tau: {:.04f}".format(
+              "Wasser_D: {:.04f} conn: {:.04f} conn_ysz: {:.04f} conn_ysz_face: {:.04f} tau: {:.04f}".format(
             epoch + 1, self.n_epoch, itr + 1, len(self.dataloader),
             self.losses["G_loss"][-1], self.losses["D_loss"][-1],
-            self.losses["Wasser_d"][-1], conn, conn_ysz, tau
+            self.losses["Wasser_d"][-1], conn, conn_ysz, conn_ysz_face, tau
         ))
 
         file = open("./log.dat", "a")
         file.write(
             "[{:03}/{:03}][{:03}/{:03}] G_loss: {:.04f} D_loss: {:.04f} "
             "Wasser_D: {:.04f} vf_loss: {:.04} ssa_loss: {:.04} "
-            "gp_loss: {:.04} conn_loss: {:.04} conn_ysz_loss: {:.04} tau_loss: {:.04}\n".format(
+            "gp_loss: {:.04} conn_loss: {:.04} conn_ysz_loss: {:.04} conn_ysz_face_loss: {:.04} tau_loss: {:.04}\n".format(
                 epoch + 1, self.n_epoch, itr + 1, len(self.dataloader),
                 self.losses["G_loss"][-1], self.losses["D_loss"][-1],
                 self.losses["Wasser_d"][-1], self.losses["vf_loss"][-1],
-                self.losses["ssa_loss"][-1], self.losses["gp_loss"][-1], conn, conn_ysz, tau
+                self.losses["ssa_loss"][-1], self.losses["gp_loss"][-1],
+                conn, conn_ysz, conn_ysz_face, tau
             )
         )
         file.close()
@@ -412,6 +423,39 @@ class Trainer():
         self.losses["conn_ysz_loss"].append(loss.item())
         return loss
 
+    def _loss_connectivity_ysz_face(self, g_data):
+        """
+        YSZ face-hinge loss (run4).
+
+        The min-slice density loss (_loss_connectivity_ysz, threshold=0.10) barely
+        fired in run2: YSZ met 10% mean density at every z-slice as disconnected blobs,
+        but taufactor needs a PERCOLATING path from z=0 to z=63. This loss targets the
+        two endpoint faces specifically, where YSZ must be present for any z-direction
+        path to exist.
+
+        Loss: penalise when mean YSZ probability at the entry face (z=0) or exit face
+        (z=63) falls below 0.18 (90% of real YSZ vf ≈ 0.20):
+
+            loss = mean_b[ ReLU(0.18 - mean_yx(ysz[:,0,:,:])) ]
+                 + mean_b[ ReLU(0.18 - mean_yx(ysz[:,-1,:,:])) ]
+
+        Unlike the pore face hinge ("YSZ wins over non-YSZ"), which would require
+        >52.5% YSZ probability at every face voxel and can never reach zero with 20%
+        vf, this density-at-face formulation fires in the regime 0.10–0.18 that the
+        existing min-slice loss doesn't cover, and becomes silent once the face
+        endpoints have realistic YSZ density.
+
+        :param g_data: (B, 3, 64, 64, 64) softmax probabilities [Ni, YSZ, Pore]
+        :return: scalar loss in [0, 0.36]
+        """
+        ysz = g_data[:, 1, :, :, :]                          # (B, Z, Y, X)
+        face_z0 = ysz[:,  0, :, :].mean(dim=(1, 2))          # (B,)
+        face_z1 = ysz[:, -1, :, :].mean(dim=(1, 2))          # (B,)
+        threshold = 0.18
+        loss = (F.relu(threshold - face_z0) + F.relu(threshold - face_z1)).mean()
+        self.losses["conn_ysz_face_loss"].append(loss.item())
+        return loss
+
     def _loss_tortuosity(self, g_data):
         """
         Differentiable tortuosity penalty via frozen τ-net surrogate.
@@ -581,25 +625,28 @@ class Trainer():
                 if iters % self.n_critic == 0:
                     self.opt_g.zero_grad()
                     g_data    = self._sample_generator(r_vf, r_ssa, b_len)
-                    loss_vf       = self._loss_vf(b_len, g_data, r_vf)
-                    loss_ssa      = self._loss_ssa(b_len, g_data, r_ssa, mm_list)
-                    loss_conn     = self._loss_connectivity(g_data)
-                    loss_conn_ysz = self._loss_connectivity_ysz(g_data)
+                    loss_vf            = self._loss_vf(b_len, g_data, r_vf)
+                    loss_ssa           = self._loss_ssa(b_len, g_data, r_ssa, mm_list)
+                    loss_conn          = self._loss_connectivity(g_data)
+                    loss_conn_ysz      = self._loss_connectivity_ysz(g_data)
+                    loss_conn_ysz_face = self._loss_connectivity_ysz_face(g_data)
 
                     g_loss = -self.critic(g_data).mean()
 
-                    # Both connectivity losses run from epoch 0 — phase collapse
+                    # All connectivity losses run from epoch 0 — phase collapse
                     # happens early and must be prevented before it entrenches.
                     if epoch >= self.timing:
                         G_loss = (g_loss
-                                  + self.w_param    * (loss_vf + loss_ssa)
-                                  + self.w_conn     * loss_conn
-                                  + self.w_conn_ysz * loss_conn_ysz)
+                                  + self.w_param         * (loss_vf + loss_ssa)
+                                  + self.w_conn          * loss_conn
+                                  + self.w_conn_ysz      * loss_conn_ysz
+                                  + self.w_conn_ysz_face * loss_conn_ysz_face)
                     else:
                         G_loss = (g_loss
-                                  + self.w_param    * loss_vf
-                                  + self.w_conn     * loss_conn
-                                  + self.w_conn_ysz * loss_conn_ysz)
+                                  + self.w_param         * loss_vf
+                                  + self.w_conn          * loss_conn
+                                  + self.w_conn_ysz      * loss_conn_ysz
+                                  + self.w_conn_ysz_face * loss_conn_ysz_face)
 
                     # τ loss: added after tau_timing epochs, only when tau_net loaded.
                     # Delayed start lets the generator form recognizable structures
