@@ -11,6 +11,8 @@ One row per training run. Updated after every analyze.py evaluation.
 | run2 | feature/ysz-connectivity-loss | a9e1b69 | add YSZ min-slice density loss (w=200) + gate tau_YSZ on connectivity | 0.818 M | 0.479 F | 0.688 F | 0.891 OK | 0.703 M | 0.878 OK | 0.689 F | 0.718 M | tau_Ni improving; tau_YSZ stuck — density loss barely fired (<0.001), blobs satisfied density but not topology |
 | run3 | tau-ysz-diagnosis | ad58eb2 | distribution-matching loss (mean+std per batch, w_tau_std=1.0) | 0.577 F | 0.475 F | 0.633 F | 0.795 M | 0.701 M | 0.812 M | 0.723 M | 0.743 M | FAILED — also trained on synthetic_data by mistake (13 batches vs 26). W_D=900, all 50 τ=NaN. ABANDONED. |
 | run4 | ysz-face-hinge | c9d0e9a | add YSZ face density at z=0/z=63 (threshold=0.18, w=200) | 0.755 M | 0.481 F | 0.677 F | 0.880 OK | 0.705 M | 0.872 OK | 0.694 F | 0.720 M | tau_YSZ unchanged (0.479→0.481). Face loss fired but didn't create topological percolation. tau_Ni regressed vs run2 (0.818→0.755). |
+| run5 | tpb-proxy | 5dad25a | add near-TPB density proxy (near_tpb=Ni×YSZ×Pore, target=0.002, w=1000) | — | — | — | — | — | — | — | — | IN PROGRESS (training, epoch 16/50 at session start). targets total_tpb width problem (gen std=0.069 vs real std=0.017). |
+| run6 | run6-weighted-tau-ysz | 89a42c5 | weight tau loss: YSZ=3×, Ni=1×, Pore=1× (same w_tau=50) | — | — | — | — | — | — | — | — | PLANNED (will train automatically after run5 via overnight_pipeline.sh). |
 
 **Legend:** F=FAIL(<0.70), M=MARGINAL(0.70–0.85), OK(≥0.85)
 **Best baseline for tau_Ni:** run2 (0.818). **Best baseline overall:** run2.
@@ -68,5 +70,5 @@ in run2), yet tau_YSZ S-value didn't improve. This suggests the generator is
 |---|---|---|---|
 | run3 | distribution-matching loss | broader spread → better KS | DONE — FAILED |
 | run4 | YSZ face-hinge at z=0/z=63 | face presence → percolation | DONE — no tau_YSZ improvement |
-| run5 | TPB proxy loss | total_tpb stuck at 0.69-0.72 F; near_tpb = Ni×YSZ×Pore | NEXT |
-| run6 | Weighted tau loss (YSZ 3×) | more gradient signal to YSZ | PLANNED |
+| run5 | TPB proxy loss | total_tpb stuck at 0.69-0.72 F; near_tpb = Ni×YSZ×Pore | IN PROGRESS — tpb_loss firing at epoch 19 (0.00063), tau_loss decreasing (1.95) |
+| run6 | Weighted tau loss (YSZ 3×, Ni=1, Pore=1) | more gradient signal to YSZ | PLANNED (automatic via overnight_pipeline.sh) |

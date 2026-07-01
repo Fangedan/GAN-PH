@@ -1,8 +1,8 @@
 # GAN-PH Project — Context for Claude
 
-> Drop this file into the repo root (or paste into chat to give Claude full context.
-> Updated at the end of a session that ran experiments run3 (distribution-matching,
-> failed) and run4 (YSZ face-hinge, currently training on ysz-face-hinge branch).
+> Updated at the end of a session that ran experiments run5 (tpb-proxy, in progress)
+> and set up run6 (run6-weighted-tau-ysz) to run automatically overnight.
+> The overnight pipeline is managed by `overnight_pipeline.sh`.
 
 ---
 
@@ -46,7 +46,9 @@ GAN-PH/
 │   └── save_model/tau_net.pth  # (gitignored) best checkpoint, val MSE=0.0940
 │
 ├── real_data/           # (gitignored) 101 real structure_XXXX/ folders
-├── generated_data/      # (gitignored) most-recent generator output
+├── generated_data/      # (gitignored) run5 evaluation output (50 structures)
+├── generated_data_run6/ # (gitignored) run6 evaluation output (50 structures)
+├── overnight_pipeline.sh  # automated pipeline: wait run5 → eval → train run6 → eval
 └── CLAUDE.md            # this file
 ```
 
@@ -68,51 +70,63 @@ All commands below assume this env. Run `1_GAN/main.py` from **inside** `1_GAN/`
 |---|---|
 | `master` | Original code + gitignore fixes + minor bug fixes |
 | `tortuosity-loss` | run1: τ-net pipeline + first GAN retrain with tau loss |
-| `feature/ysz-connectivity-loss` | run2: adds YSZ min-slice density loss + tau gate |
+| `feature/ysz-connectivity-loss` | run2: YSZ min-slice density loss + tau gate |
 | `tau-ysz-diagnosis` | run3: distribution-matching loss (FAILED — abandoned) |
-| `ysz-face-hinge` | **Active:** run4 — YSZ face density at endpoints (built on run2) |
+| `ysz-face-hinge` | run4: YSZ face density at endpoints (built on run2) |
+| `tpb-proxy` | **Current:** run5 — near-TPB density proxy loss (built on ysz-face-hinge) |
+| `run6-weighted-tau-ysz` | run6: weighted tau loss YSZ=3×, Ni=1×, Pore=1× (built on tpb-proxy) |
 | `ni-connectivity-ablation` | Earlier experiment (Ni connectivity ablation) |
 
 ---
 
 ## Full experiment history
 
-### run0 — Baseline (master, commit 66b3884)
+### run0 — Baseline (master, 66b3884)
 No tau loss. tau_Ni=0.649 FAIL, tau_YSZ=0.484 FAIL.
 
-### run1 — Tau loss added (tortuosity-loss, commit 633644c)
+### run1 — Tau loss (tortuosity-loss, 633644c)
 Added `_loss_tortuosity()`: MSE(τ_net(phase_prob), log_target) for Ni/YSZ/Pore.
-w_tau=50, activates at epoch 10. Result: tau_Ni improved to 0.770 MARGINAL.
-tau_YSZ stuck at 0.484 because disconnected YSZ → taufactor NaN → tau_net gradient useless.
+w_tau=50, activates at epoch 10. tau_Ni→0.770 M, tau_YSZ stuck 0.484 F.
 
-### run2 — YSZ connectivity proxy (feature/ysz-connectivity-loss, commit a9e1b69)
+### run2 — YSZ min-slice density (feature/ysz-connectivity-loss, a9e1b69)
 Added `_loss_connectivity_ysz()`: ReLU(0.10 - mean_ysz_per_z_slice).mean() × w=200.
-Added YSZ gate in `_loss_tortuosity()`: skip samples where min z-slice mean < 0.05.
-Result: tau_Ni→0.818 MARGINAL. tau_YSZ still 0.479 FAIL — density loss barely fired
-(<0.001) because YSZ blobs satisfied 10% density threshold without being topologically connected.
+Added YSZ gate in `_loss_tortuosity()`. tau_Ni→0.818 M. tau_YSZ 0.479 F — density
+loss barely fired (<0.001), blobs satisfied threshold without topological percolation.
 
-### run3 — Distribution-matching loss (tau-ysz-diagnosis, commit ad58eb2) — FAILED
-Replaced MSE-to-mean with mean_loss + std_loss. Key bug: run3 accidentally omitted
-`--data ../real_data` and trained on synthetic_data (only 13 batches/epoch vs 26 for
-real data). Additionally, batch=4 std gradient was too noisy (3 DOF). Generator
-mode-collapsed: W_D=900 at epoch 50, all 50 generated structures returned τ=NaN.
-tau_Ni=0.577 FAIL (regression). ABANDONED.
+### run3 — Distribution-matching loss (tau-ysz-diagnosis, ad58eb2) — FAILED
+CRITICAL: accidentally trained on synthetic_data (13 batches vs 26). Generator
+mode-collapsed, W_D=900, all 50 τ=NaN. DO NOT USE std loss with batch=4.
 
-DO NOT use distribution-matching std loss with batch=4. If retried, accumulate
-τ-net predictions over N≥50 steps with a running FIFO buffer before computing std.
+### run4 — YSZ face-hinge (ysz-face-hinge, c9d0e9a)
+Added `_loss_connectivity_ysz_face()`: ReLU(0.18 - mean_ysz_face_z0) + same for z63.
+w_conn_ysz_face=200. tau_YSZ→0.481 FAIL (no change). tau_Ni→0.755 M (regression
+from run2's 0.818, face loss competes with tau gradient).
 
-### run4 — YSZ face-hinge (ysz-face-hinge, commit c9d0e9a) — IN PROGRESS
-Built on run2 code. Added `_loss_connectivity_ysz_face()`: requires mean YSZ
-probability at z=0 and z=63 faces ≥ 0.18 (vs existing 0.10 threshold across all
-slices). w_conn_ysz_face=200, active from epoch 0.
+### run5 — TPB proxy loss (tpb-proxy, 5dad25a) — IN PROGRESS
+Added `_loss_tpb_proxy()`: near_tpb = Ni_prob × YSZ_prob × Pore_prob, targets 0.002.
+w_tpb=1000. Root cause of total_tpb FAIL: generated std=0.069 vs real std=0.017
+(distribution width problem, not mean mismatch). tpb_loss started firing at epoch 19
+(value 0.00063). tau_loss decreasing well (1.95 at epoch 19). Results pending.
 
-Physics: if YSZ is present at both entry/exit faces and has ≥10% density per slice,
-taufactor's z-direction solve has a path to find. The 0.10 threshold barely fired
-because blobs satisfied density without connecting the endpoints.
+Training command used:
+```bash
+cd 1_GAN
+conda run -n ganph --no-capture-output python -u main.py \
+    --data ../real_data --lr 0.00005 --epochs 50 \
+    --tau-estimator ../5_TAU/save_model/tau_net.pth \
+    --tau-targets ../5_TAU/tau_targets.json > run5_output.log 2>&1
+```
+
+### run6 — Weighted tau YSZ 3× (run6-weighted-tau-ysz, 89a42c5) — PLANNED
+Modified `_loss_tortuosity()`: phases = [("Ni",0,1.0), ("YSZ",1,3.0), ("Pore",2,1.0)].
+Loss = sum(weight × MSE) / sum(weights). YSZ gets 3× gradient signal within same
+w_tau=50 budget. Will run automatically after run5 via overnight_pipeline.sh.
+Checkpoint will land in `/c/Users/alin2/GAN-PH-run6/1_GAN/save_model/Generator_050epoch.pth`
+(git worktree, NOT the main repo).
 
 ---
 
-## S-value table (all runs)
+## S-value table (all completed runs)
 
 | run | tau_Ni | tau_YSZ | tau_Pore | conn_Ni | conn_YSZ | conn_Pore | total_tpb | active_tpb |
 |---|---|---|---|---|---|---|---|---|
@@ -120,13 +134,15 @@ because blobs satisfied density without connecting the endpoints.
 | run1 | 0.770 M | 0.484 F | 0.676 F | 0.876 OK | 0.707 M | 0.876 OK | 0.693 F | 0.721 M |
 | run2 | 0.818 M | 0.479 F | 0.688 F | 0.891 OK | 0.703 M | 0.878 OK | 0.689 F | 0.718 M |
 | run3 | 0.577 F | 0.475 F | 0.633 F | 0.795 M | 0.701 M | 0.812 M | 0.723 M | 0.743 M |
-| run4 | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| run4 | 0.755 M | 0.481 F | 0.677 F | 0.880 OK | 0.705 M | 0.872 OK | 0.694 F | 0.720 M |
+| run5 | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| run6 | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
 
-Full details in `5_TAU/RESULTS.md`.
+Best baseline: run2 (tau_Ni=0.818 M). Full details in `5_TAU/RESULTS.md`.
 
 ---
 
-## Key hyperparameters (1_GAN/training.py on ysz-face-hinge)
+## Key hyperparameters (1_GAN/training.py, as of tpb-proxy)
 
 | Parameter | Value | Purpose |
 |---|---|---|
@@ -135,8 +151,10 @@ Full details in `5_TAU/RESULTS.md`.
 | w_conn | 50 | Pore connectivity (isolation + face hinge) |
 | w_conn_ysz | 200 | YSZ min-slice density (threshold=0.10, all z) |
 | w_conn_ysz_face | 200 | YSZ face density (threshold=0.18, z=0 and z=63 only) |
-| w_tau | 50 | Tortuosity surrogate loss (MSE to log mean) |
-| tau_timing | 10 | Epoch at which tau loss activates |
+| w_tpb | 1000 | Near-TPB density proxy (target=0.002) |
+| w_tau | 50 | Tortuosity surrogate loss |
+| tau_timing | 10 | Epoch at which tau+tpb losses activate |
+| timing | 9999 | Epoch at which SSA loss is added (never in 50 epochs, SSA bug) |
 | lr | 5e-5 | Adam learning rate for both G and C |
 
 ---
@@ -151,7 +169,7 @@ conda run -n ganph --no-capture-output python -u main.py \
     --epochs 50 \
     --tau-estimator ../5_TAU/save_model/tau_net.pth \
     --tau-targets ../5_TAU/tau_targets.json
-# On CPU ~90-100 minutes for 50 epochs (26 batches/epoch with 101 real structures, batch=4)
+# On CPU ~90-100 minutes for 50 epochs (26 batches/epoch, batch=4)
 
 # 2. Generate structures (from inside 4_CNNCT/)
 conda run -n ganph --no-capture-output python -u generate_structures.py \
@@ -184,32 +202,47 @@ Get-Content -Wait 1_GAN/log.dat | Select-String "\[026/026\]"
 }
 ```
 
-`main.py` reads `log_*` keys (log-scale targets). `std_log_*` keys are computed
-by `compute_tau_labels.py` and available for future use. Do NOT use raw keys for
-training — tau_net outputs log(τ), not raw τ.
+`main.py` reads `log_*` keys. Do NOT use raw keys — tau_net outputs log(τ).
 
 ---
 
-## What still needs work (after run4 results are in)
+## Overnight pipeline (overnight_pipeline.sh)
 
-### If run4 improved tau_YSZ: next is Task 4 — TPB proxy
-```python
-# Near-TPB: voxel where all three phases have non-trivial probability
-near_tpb = g_data[:,0] * g_data[:,1] * g_data[:,2]   # (B, 64, 64, 64)
-loss_tpb = F.relu(target_tpb - near_tpb.mean())
-```
-total_tpb and active_tpb have been stuck at FAIL/MARGINAL across all runs.
+Runs automatically: wait for run5 epoch 50 → eval → create run6 worktree → train run6 → eval.
+Key output files (written to 1_GAN/):
+- `run5_svalues.log` — stdout from analyze.py (run5 S-value summary)
+- `run6_output.log` — run6 training stdout (mirrored from worktree)
+- `run6_svalues.log` — stdout from analyze.py (run6 S-value summary)
 
-### If run4 did NOT improve tau_YSZ: consider next alternatives
-- Increase w_conn_ysz_face (try 500) to force more YSZ at faces
-- Raise face threshold from 0.18 to 0.20 (full real vf)
-- Try more epochs (100) — tau_Ni improved consistently with more training
-- Weighted tau loss: give YSZ 3× weight in `_loss_tortuosity()`
+Pipeline progress is also written to `pipeline.log` in the repo root.
 
-### Task 5 — SSA gradient bug (BUG 1)
+For run6, a git worktree is created at `/c/Users/alin2/GAN-PH-run6` (Windows path:
+`C:\Users\alin2\GAN-PH-run6`). Run6 checkpoint ends up in `GAN-PH-run6/1_GAN/save_model/`
+and is also copied to `1_GAN/save_model_run6/Generator_050epoch.pth` for evaluation.
+
+---
+
+## What still needs work (after run5/run6 results)
+
+### If run5 improved total_tpb (main goal of run5)
+Expected result: total_tpb S-value improves from 0.694 F toward 0.70+.
+tau_Ni should stay near 0.75–0.82 M.
+
+### If run6 improved tau_YSZ (main goal of run6)
+tau_YSZ stuck at 0.479–0.484 F across all runs 0–4. The 3× gradient weight
+is the next most promising fix short of a fundamentally different approach.
+
+### Task 5 — SSA gradient bug (after tau metrics are addressed)
 `_loss_ssa` severs gradients: `torch.no_grad() + .detach() + .requires_grad_()`.
-Fix: remove all three and let gradients flow through estimator naturally.
-Only attempt this after tau metrics are in better shape (avoid confounds).
+Note: SSA loss is ALSO disabled by `timing=9999` (never added to G_loss in 50 epochs).
+Fix requires both: (1) remove the no_grad/detach, and (2) set timing to a real epoch
+(e.g. timing=10 so SSA trains after the generator has formed recognizable structures).
+Only attempt after tau metrics are improved — avoid too many simultaneous changes.
+
+### Task 6 — Branch hygiene
+- Update RESULTS.md with run5 and run6 S-values once pipeline finishes
+- Decide what to merge to master (probably tpb-proxy after run5 results confirm no regressions)
+- Tag important checkpoints in the git history
 
 ---
 
@@ -217,11 +250,13 @@ Only attempt this after tau metrics are in better shape (avoid confounds).
 
 - **Never wrap tau_net in torch.no_grad()** — gradients must flow tau_loss → tau_net → g_data → generator.
 - **Z-axis is dim 2** of (B,C,Z,Y,X) tensors. Taufactor solves along z.
-- **tau_net outputs log(τ)** — targets in tau_targets.json are also log-scale.
+- **tau_net outputs log(τ)** — targets in tau_targets.json are log-scale.
 - **conda run --no-capture-output** is required on Windows to avoid stdout encoding errors.
-- **Always pass --data ../real_data** when training — omitting it uses synthetic_data
-  (only 13 batches/epoch, different distribution). This bug caused run3 failure.
-- log.dat accumulates across all training runs. To identify current run's entries,
-  grep for a column that is unique to that run (e.g. `conn_ysz_face_loss` for run4).
-- The `generate_structures.py` default loads `Generator_050epoch.pth` — make sure
-  you're on the right branch before generating.
+- **Always pass --data ../real_data** when training. Omitting uses synthetic_data
+  (only 13 batches/epoch, different distribution). This caused run3's failure.
+- log.dat accumulates across ALL training runs. To detect current run's entries,
+  grep for a column unique to that run (e.g. `tpb_loss` for run5/run6).
+- The overnight pipeline uses `git worktree` for run6 so log.dat is not clobbered
+  by a branch switch. Run6 trains in `C:\Users\alin2\GAN-PH-run6\`.
+- matplotlib.use('Agg') must be set before pyplot import — avoids TkAgg crash in
+  background processes on Windows.
