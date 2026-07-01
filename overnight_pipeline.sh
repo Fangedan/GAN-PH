@@ -75,6 +75,7 @@ conda run -n ganph --no-capture-output python -u main.py \
     --data "$REPO/real_data" \
     --lr 0.00005 \
     --epochs 50 \
+    --estimator "$REPO/2_CNN/save_model/model_200epoch.pth" \
     --tau-estimator "$REPO/5_TAU/save_model/tau_net.pth" \
     --tau-targets "$REPO/5_TAU/tau_targets.json" 2>&1 | tee "$REPO/1_GAN/run6_output.log"
 
