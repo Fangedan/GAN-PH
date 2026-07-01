@@ -66,6 +66,7 @@ class Trainer():
             "conn_loss":         [],   # pore connectivity penalty
             "conn_ysz_loss":     [],   # YSZ min-slice density proxy
             "conn_ysz_face_loss":[],   # YSZ face density at z=0 and z=63 (run4)
+            "tpb_loss":          [],   # near-TPB density proxy (run5)
             "tau_loss":          [],   # tortuosity surrogate loss (empty when tau_net=None)
         }
 
@@ -103,6 +104,17 @@ class Trainer():
         # specifically targets the ENDPOINTS where taufactor's z-direction solve must
         # enter/exit. Max contribution: 200 * (2 * 0.18) = 72 to G_loss.
         self.w_conn_ysz_face = 200
+
+        # Near-TPB density proxy (run5).
+        # near_tpb = Ni_prob * YSZ_prob * Pore_prob: high when all three phases
+        # coexist at a voxel (i.e., the generator is uncertain = a phase boundary).
+        # At epoch 0 (random init, all probs ~1/3): near_tpb.mean() ≈ 0.037.
+        # After run4 training (confident generator): near_tpb.mean() ≈ 0.00028.
+        # target_tpb=0.002 fires immediately, pushing the generator to maintain
+        # more phase-boundary voxels and preventing the low-TPB tail that causes
+        # total_tpb S-value FAIL (generated std=0.069 vs real std=0.017).
+        self.target_tpb = 0.002
+        self.w_tpb      = 1000
 
         # Tortuosity surrogate loss weight.
         # If τ_pred MSE ≈ 0.25 (half a τ unit off per phase), then
@@ -143,25 +155,26 @@ class Trainer():
         conn     = self.losses["conn_loss"][-1]     if self.losses["conn_loss"]     else 0.0
         conn_ysz      = self.losses["conn_ysz_loss"][-1]      if self.losses["conn_ysz_loss"]      else 0.0
         conn_ysz_face = self.losses["conn_ysz_face_loss"][-1] if self.losses["conn_ysz_face_loss"] else 0.0
+        tpb           = self.losses["tpb_loss"][-1]           if self.losses["tpb_loss"]           else 0.0
         tau           = self.losses["tau_loss"][-1]            if self.losses["tau_loss"]           else 0.0
 
         print("[{:03}/{:03}][{:03}/{:03}] G_loss: {:.04f} D_loss: {:.04f} "
-              "Wasser_D: {:.04f} conn: {:.04f} conn_ysz: {:.04f} conn_ysz_face: {:.04f} tau: {:.04f}".format(
+              "Wasser_D: {:.04f} conn: {:.04f} conn_ysz: {:.04f} conn_ysz_face: {:.04f} tpb: {:.05f} tau: {:.04f}".format(
             epoch + 1, self.n_epoch, itr + 1, len(self.dataloader),
             self.losses["G_loss"][-1], self.losses["D_loss"][-1],
-            self.losses["Wasser_d"][-1], conn, conn_ysz, conn_ysz_face, tau
+            self.losses["Wasser_d"][-1], conn, conn_ysz, conn_ysz_face, tpb, tau
         ))
 
         file = open("./log.dat", "a")
         file.write(
             "[{:03}/{:03}][{:03}/{:03}] G_loss: {:.04f} D_loss: {:.04f} "
             "Wasser_D: {:.04f} vf_loss: {:.04} ssa_loss: {:.04} "
-            "gp_loss: {:.04} conn_loss: {:.04} conn_ysz_loss: {:.04} conn_ysz_face_loss: {:.04} tau_loss: {:.04}\n".format(
+            "gp_loss: {:.04} conn_loss: {:.04} conn_ysz_loss: {:.04} conn_ysz_face_loss: {:.04} tpb_loss: {:.05} tau_loss: {:.04}\n".format(
                 epoch + 1, self.n_epoch, itr + 1, len(self.dataloader),
                 self.losses["G_loss"][-1], self.losses["D_loss"][-1],
                 self.losses["Wasser_d"][-1], self.losses["vf_loss"][-1],
                 self.losses["ssa_loss"][-1], self.losses["gp_loss"][-1],
-                conn, conn_ysz, conn_ysz_face, tau
+                conn, conn_ysz, conn_ysz_face, tpb, tau
             )
         )
         file.close()
@@ -425,6 +438,39 @@ class Trainer():
         self.losses["conn_ysz_loss"].append(loss.item())
         return loss
 
+    def _loss_tpb_proxy(self, g_data):
+        """
+        Near-TPB density proxy (run5).
+
+        Triple-phase boundaries (TPBs) are where all three phases meet and are
+        the electrochemically active sites. The actual TPB metric (total_tpb) is
+        computed on binary argmax structures and is non-differentiable.
+
+        Proxy: near_tpb = Ni_prob * YSZ_prob * Pore_prob is highest at voxels
+        where the generator is uncertain between all three phases — i.e., at phase
+        boundaries. Higher near_tpb.mean() → more phase-boundary voxels → more
+        actual TPB density in the binary structure.
+
+        Calibration from run4 generator (epoch 50):
+          near_tpb.mean() ≈ 0.000279  (generator confidently separates phases)
+          init value (all probs=1/3):  0.037
+
+        target_tpb=0.002 fires immediately (current << target), contributing
+        w_tpb * (0.002 - 0.000279) ≈ 1.7 to G_loss. This is modest — large enough
+        to provide a gradient but not enough to destabilize training.
+
+        Root cause of total_tpb FAIL: the generated distribution is 4× wider than
+        real (std=0.069 vs 0.017). This loss prevents the low-TPB tail (structures
+        with total_tpb < 0.80) by maintaining a minimum level of phase mixing.
+
+        :param g_data: (B, 3, 64, 64, 64) softmax probabilities [Ni, YSZ, Pore]
+        :return: scalar loss, range [0, target_tpb]
+        """
+        near_tpb = g_data[:, 0] * g_data[:, 1] * g_data[:, 2]   # (B, 64, 64, 64)
+        loss = F.relu(self.target_tpb - near_tpb.mean())
+        self.losses["tpb_loss"].append(loss.item())
+        return loss
+
     def _loss_connectivity_ysz_face(self, g_data):
         """
         YSZ face-hinge loss (run4).
@@ -632,23 +678,25 @@ class Trainer():
                     loss_conn          = self._loss_connectivity(g_data)
                     loss_conn_ysz      = self._loss_connectivity_ysz(g_data)
                     loss_conn_ysz_face = self._loss_connectivity_ysz_face(g_data)
+                    loss_tpb           = self._loss_tpb_proxy(g_data)
 
                     g_loss = -self.critic(g_data).mean()
 
-                    # All connectivity losses run from epoch 0 — phase collapse
-                    # happens early and must be prevented before it entrenches.
+                    # All connectivity/proxy losses run from epoch 0.
                     if epoch >= self.timing:
                         G_loss = (g_loss
                                   + self.w_param         * (loss_vf + loss_ssa)
                                   + self.w_conn          * loss_conn
                                   + self.w_conn_ysz      * loss_conn_ysz
-                                  + self.w_conn_ysz_face * loss_conn_ysz_face)
+                                  + self.w_conn_ysz_face * loss_conn_ysz_face
+                                  + self.w_tpb           * loss_tpb)
                     else:
                         G_loss = (g_loss
                                   + self.w_param         * loss_vf
                                   + self.w_conn          * loss_conn
                                   + self.w_conn_ysz      * loss_conn_ysz
-                                  + self.w_conn_ysz_face * loss_conn_ysz_face)
+                                  + self.w_conn_ysz_face * loss_conn_ysz_face
+                                  + self.w_tpb           * loss_tpb)
 
                     # τ loss: added after tau_timing epochs, only when tau_net loaded.
                     # Delayed start lets the generator form recognizable structures
