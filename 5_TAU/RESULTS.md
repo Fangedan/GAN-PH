@@ -13,6 +13,7 @@ One row per training run. Updated after every analyze.py evaluation.
 | run4 | ysz-face-hinge | c9d0e9a | add YSZ face density at z=0/z=63 (threshold=0.18, w=200) | 0.755 M | 0.481 F | 0.677 F | 0.880 OK | 0.705 M | 0.872 OK | 0.694 F | 0.720 M | tau_YSZ unchanged (0.479→0.481). Face loss fired but didn't create topological percolation. tau_Ni regressed vs run2 (0.818→0.755). |
 | run5 | tpb-proxy | 5dad25a | add near-TPB density proxy (near_tpb=Ni×YSZ×Pore, target=0.002, w=1000) | — | — | — | — | — | — | — | — | IN PROGRESS (training, epoch 16/50 at session start). targets total_tpb width problem (gen std=0.069 vs real std=0.017). |
 | run6 | run6-weighted-tau-ysz | 89a42c5 | weight tau loss: YSZ=3×, Ni=1×, Pore=1× (same w_tau=50) | — | — | — | — | — | — | — | — | PLANNED (will train automatically after run5 via overnight_pipeline.sh). |
+| run7 | run7-ssa-fix | 12b394d | fix SSA gradient + enable (timing=10): remove no_grad/detach/requires_grad_, freeze estimator | — | — | — | — | — | — | — | — | READY — train after run6 results. SSA loss was a no-op for all prior runs. |
 
 **Legend:** F=FAIL(<0.70), M=MARGINAL(0.70–0.85), OK(≥0.85)
 **Best baseline for tau_Ni:** run2 (0.818). **Best baseline overall:** run2.
