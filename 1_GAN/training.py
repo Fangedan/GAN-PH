@@ -24,6 +24,8 @@
 import numpy as np
 import pandas as pd
 import os
+import matplotlib
+matplotlib.use('Agg')  # non-interactive backend — avoids Tkinter crash in background processes
 import matplotlib.pyplot as plt
 import torch
 import torch.nn.functional as F          # NEW: needed for conv3d and relu
