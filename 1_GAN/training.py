@@ -528,9 +528,17 @@ class Trainer():
         :param g_data: (b, 3, 64, 64, 64) softmax probabilities [Ni, YSZ, Pore]
         :return: scalar τ loss (torch.Tensor with grad)
         """
-        phases   = [("Ni", 0), ("YSZ", 1), ("Pore", 2)]
+        # run14: per-phase weights. Pore gets 0.05× because:
+        # - Real Pore tau has very narrow distribution (std_log=0.0319, range 1.88-2.16)
+        # - Full-weight MSE drives all Pore samples to same tau → variance collapses → KS FAIL
+        # - run12 (w_tau=20 global): tau_Pore improved 0.697→0.749 M but tau_Ni crashed 0.760→0.550 F
+        # - run13 (Ni-only): tau_Pore further improved to 0.819 M but tau_Ni still 0.560 F
+        # - The 3-phase tau loss in run5 prevents tau_Ni over-convergence via multi-gradient competition
+        # - Solution: keep Ni+YSZ at 1.0× to maintain multi-phase resistance; Pore at 0.05× (weak signal)
+        # YSZ stays at 1.0× — its loss barely contributes (YSZ usually disconnected → gated out)
+        phases   = [("Ni", 0, 1.0), ("YSZ", 1, 1.0), ("Pore", 2, 0.05)]
         terms    = []
-        for ph_name, ch in phases:
+        for ph_name, ch, ph_w in phases:
             target = self.tau_targets.get(ph_name)
             if target is None:
                 continue
@@ -551,7 +559,7 @@ class Trainer():
             else:
                 tau_pred = self.tau_net(phase_prob)                  # (b,)
 
-            terms.append(torch.mean((tau_pred - target_t) ** 2))
+            terms.append(ph_w * torch.mean((tau_pred - target_t) ** 2))
 
         if not terms:
             return torch.zeros(1, device=g_data.device).squeeze()
