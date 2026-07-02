@@ -1,8 +1,7 @@
 # GAN-PH Project — Context for Claude
 
-> Updated at the end of a session that ran experiments run5 (tpb-proxy, in progress)
-> and set up run6 (run6-weighted-tau-ysz) to run automatically overnight.
-> The overnight pipeline is managed by `overnight_pipeline.sh`.
+> Updated after runs 5–8. run8 (100 epochs, tpb-proxy) is training.
+> SSA differentiable loss has been permanently abandoned (see notes below).
 
 ---
 
@@ -48,7 +47,7 @@ GAN-PH/
 ├── real_data/           # (gitignored) 101 real structure_XXXX/ folders
 ├── generated_data/      # (gitignored) run5 evaluation output (50 structures)
 ├── generated_data_run6/ # (gitignored) run6 evaluation output (50 structures)
-├── overnight_pipeline.sh  # automated pipeline: wait run5 → eval → train run6 → eval
+├── generated_data_run8/ # (gitignored) run8 evaluation output (50 structures)
 └── CLAUDE.md            # this file
 ```
 
@@ -73,8 +72,10 @@ All commands below assume this env. Run `1_GAN/main.py` from **inside** `1_GAN/`
 | `feature/ysz-connectivity-loss` | run2: YSZ min-slice density loss + tau gate |
 | `tau-ysz-diagnosis` | run3: distribution-matching loss (FAILED — abandoned) |
 | `ysz-face-hinge` | run4: YSZ face density at endpoints (built on run2) |
-| `tpb-proxy` | **Current:** run5 — near-TPB density proxy loss (built on ysz-face-hinge) |
+| `tpb-proxy` | **Current:** run5 (50 ep) + run8 (100 ep) — near-TPB density proxy loss |
 | `run6-weighted-tau-ysz` | run6: weighted tau loss YSZ=3×, Ni=1×, Pore=1× (built on tpb-proxy) |
+| `run7a-ssa-fix` | run7a: SSA gradient fix attempt 1 (FAILED — gradient explosion) |
+| `run7b-ssa-fix` | run7b: SSA gradient fix attempt 2 (FAILED — broadcasting + OOD) |
 | `ni-connectivity-ablation` | Earlier experiment (Ni connectivity ablation) |
 
 ---
@@ -82,7 +83,7 @@ All commands below assume this env. Run `1_GAN/main.py` from **inside** `1_GAN/`
 ## Full experiment history
 
 ### run0 — Baseline (master, 66b3884)
-No tau loss. tau_Ni=0.649 FAIL, tau_YSZ=0.484 FAIL.
+No tau loss. tau_Ni=0.649 F, tau_YSZ=0.484 F.
 
 ### run1 — Tau loss (tortuosity-loss, 633644c)
 Added `_loss_tortuosity()`: MSE(τ_net(phase_prob), log_target) for Ni/YSZ/Pore.
@@ -102,27 +103,45 @@ Added `_loss_connectivity_ysz_face()`: ReLU(0.18 - mean_ysz_face_z0) + same for 
 w_conn_ysz_face=200. tau_YSZ→0.481 FAIL (no change). tau_Ni→0.755 M (regression
 from run2's 0.818, face loss competes with tau gradient).
 
-### run5 — TPB proxy loss (tpb-proxy, 5dad25a) — IN PROGRESS
+### run5 — TPB proxy loss (tpb-proxy, 5dad25a) — DONE
 Added `_loss_tpb_proxy()`: near_tpb = Ni_prob × YSZ_prob × Pore_prob, targets 0.002.
-w_tpb=1000. Root cause of total_tpb FAIL: generated std=0.069 vs real std=0.017
-(distribution width problem, not mean mismatch). tpb_loss started firing at epoch 19
-(value 0.00063). tau_loss decreasing well (1.95 at epoch 19). Results pending.
+w_tpb=1000. tau_Ni=0.760 M, tau_YSZ=0.479 F, tau_Pore=0.697 F, total_tpb=0.698 F.
+tpb_loss reached 0.0017 by epoch 50. tau_loss still converging at epoch 50 (0.31).
+
+### run6 — Weighted tau YSZ 3× (run6-weighted-tau-ysz, 89a42c5) — DONE
+Modified `_loss_tortuosity()`: phases = [("Ni",0,1.0), ("YSZ",1,3.0), ("Pore",2,1.0)].
+tau_Ni crashed 0.760→0.681 F (REGRESSION). tau_YSZ: 0.479→0.459 F (WORSE). ABANDONED.
+total_tpb improved (0.698→0.718 M). tau_Pore improved (0.697→0.730 M).
+
+### run7 — Skipped
+Built on run6 (3× YSZ weight) — inherits tau_Ni regression. Not trained.
+
+### run7a — SSA gradient fix attempt 1 (run7a-ssa-fix, 525e694) — FAILED
+Removed no_grad/detach from `_loss_ssa`, froze estimator weights, timing=10.
+G_loss exploded to 4.5B at epoch 11. Root cause: true was in raw SSA units (~1e7),
+pred standardized to [0,1]. With w_param=1000, contribution ≈ 1.9e10.
+
+### run7b — SSA gradient fix attempt 2 (run7b-ssa-fix, 21d25e1) — FAILED
+Added standardization of true using mm_list, separate w_ssa=50.
+G_loss still exploded to 344M at epoch 11. Root causes:
+1. `true` is [3B], `pred` is [3B,1] → broadcasting gives [3B,3B] cross-product (wrong)
+2. Estimator sees OOD inputs (soft probs, not binary voxels) → pred outside mm_list range
+3. Estimator CNN Jacobian amplifies any gradient routed through it
+**SSA differentiable loss is permanently abandoned** — see important notes below.
+
+### run8 — Extended training 100 epochs (tpb-proxy, 5dad25a) — IN PROGRESS
+Same as run5 but 100 epochs instead of 50. tau_loss was still converging at epoch 50.
+Hypothesis: extra 50 epochs push tau_Ni toward 0.82+ and tau_Pore above 0.70.
+tau_YSZ not expected to improve (stuck across 9 runs regardless of approach).
 
 Training command used:
 ```bash
 cd 1_GAN
 conda run -n ganph --no-capture-output python -u main.py \
-    --data ../real_data --lr 0.00005 --epochs 50 \
+    --data ../real_data --lr 0.00005 --epochs 100 \
     --tau-estimator ../5_TAU/save_model/tau_net.pth \
-    --tau-targets ../5_TAU/tau_targets.json > run5_output.log 2>&1
+    --tau-targets ../5_TAU/tau_targets.json 2>&1 | tee run8_output.log
 ```
-
-### run6 — Weighted tau YSZ 3× (run6-weighted-tau-ysz, 89a42c5) — PLANNED
-Modified `_loss_tortuosity()`: phases = [("Ni",0,1.0), ("YSZ",1,3.0), ("Pore",2,1.0)].
-Loss = sum(weight × MSE) / sum(weights). YSZ gets 3× gradient signal within same
-w_tau=50 budget. Will run automatically after run5 via overnight_pipeline.sh.
-Checkpoint will land in `/c/Users/alin2/GAN-PH-run6/1_GAN/save_model/Generator_050epoch.pth`
-(git worktree, NOT the main repo).
 
 ---
 
@@ -135,14 +154,17 @@ Checkpoint will land in `/c/Users/alin2/GAN-PH-run6/1_GAN/save_model/Generator_0
 | run2 | 0.818 M | 0.479 F | 0.688 F | 0.891 OK | 0.703 M | 0.878 OK | 0.689 F | 0.718 M |
 | run3 | 0.577 F | 0.475 F | 0.633 F | 0.795 M | 0.701 M | 0.812 M | 0.723 M | 0.743 M |
 | run4 | 0.755 M | 0.481 F | 0.677 F | 0.880 OK | 0.705 M | 0.872 OK | 0.694 F | 0.720 M |
-| run5 | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| run6 | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| run5 | 0.760 M | 0.479 F | 0.697 F | 0.866 OK | 0.704 M | 0.874 OK | 0.698 F | 0.720 M |
+| run6 | 0.681 F | 0.459 F | 0.730 M | 0.820 M | 0.682 F | 0.884 OK | 0.718 M | 0.694 F |
+| run7a | FAILED | — | — | — | — | — | — | — |
+| run7b | FAILED | — | — | — | — | — | — | — |
+| run8 | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
 
 Best baseline: run2 (tau_Ni=0.818 M). Full details in `5_TAU/RESULTS.md`.
 
 ---
 
-## Key hyperparameters (1_GAN/training.py, as of tpb-proxy)
+## Key hyperparameters (1_GAN/training.py, as of tpb-proxy / run8)
 
 | Parameter | Value | Purpose |
 |---|---|---|
@@ -154,7 +176,7 @@ Best baseline: run2 (tau_Ni=0.818 M). Full details in `5_TAU/RESULTS.md`.
 | w_tpb | 1000 | Near-TPB density proxy (target=0.002) |
 | w_tau | 50 | Tortuosity surrogate loss |
 | tau_timing | 10 | Epoch at which tau+tpb losses activate |
-| timing | 9999 | Epoch at which SSA loss is added (never in 50 epochs, SSA bug) |
+| timing | 9999 | Epoch at which SSA loss is added (never fires — SSA abandoned) |
 | lr | 5e-5 | Adam learning rate for both G and C |
 
 ---
@@ -166,10 +188,10 @@ Best baseline: run2 (tau_Ni=0.818 M). Full details in `5_TAU/RESULTS.md`.
 conda run -n ganph --no-capture-output python -u main.py \
     --data ../real_data \
     --lr 0.00005 \
-    --epochs 50 \
+    --epochs 100 \
     --tau-estimator ../5_TAU/save_model/tau_net.pth \
     --tau-targets ../5_TAU/tau_targets.json
-# On CPU ~90-100 minutes for 50 epochs (26 batches/epoch, batch=4)
+# On CPU ~90-100 minutes per 50 epochs (26 batches/epoch, batch=4)
 
 # 2. Generate structures (from inside 4_CNNCT/)
 conda run -n ganph --no-capture-output python -u generate_structures.py \
@@ -185,9 +207,9 @@ conda run -n ganph --no-capture-output python -u analyze.py \
 # S-value summary printed to stdout; also saved to s_values_runN_svalues.csv
 ```
 
-Watch training live:
+Watch training live (every-last-batch-per-epoch lines):
 ```powershell
-Get-Content -Wait 1_GAN/log.dat | Select-String "\[026/026\]"
+Get-Content -Wait 1_GAN/run8_output.log | Select-String "\[026/026\]"
 ```
 
 ---
@@ -206,43 +228,32 @@ Get-Content -Wait 1_GAN/log.dat | Select-String "\[026/026\]"
 
 ---
 
-## Overnight pipeline (overnight_pipeline.sh)
+## What still needs work (after run8)
 
-Runs automatically: wait for run5 epoch 50 → eval → create run6 worktree → train run6 → eval.
-Key output files (written to 1_GAN/):
-- `run5_svalues.log` — stdout from analyze.py (run5 S-value summary)
-- `run6_output.log` — run6 training stdout (mirrored from worktree)
-- `run6_svalues.log` — stdout from analyze.py (run6 S-value summary)
+### tau_YSZ — stuck at 0.46–0.484 across ALL 9 runs
+No density/face/tau-loss approach has moved this. The problem is topological:
+YSZ connectivity (percolation from z=0 to z=63) is non-local and hard to
+supervise with per-slice density. All density-based attempts fail because YSZ
+blobs can satisfy local density without forming a through-thickness path.
 
-Pipeline progress is also written to `pipeline.log` in the repo root.
+Possible next approaches:
+1. **Differentiable flood-fill**: iterative 3D max-pool along z, starting from
+   z=0 face, check if YSZ probability "propagates" to z=63. O(64) conv ops.
+2. **Accept tau_YSZ FAIL**: focus on getting remaining metrics to ≥ 0.70.
+3. **Longer training**: already testing (run8 = 100 epochs).
 
-For run6, a git worktree is created at `/c/Users/alin2/GAN-PH-run6` (Windows path:
-`C:\Users\alin2\GAN-PH-run6`). Run6 checkpoint ends up in `GAN-PH-run6/1_GAN/save_model/`
-and is also copied to `1_GAN/save_model_run6/Generator_050epoch.pth` for evaluation.
+### Task — SSA differentiable loss (ABANDONED — do not retry without architectural changes)
+The SSA estimator (2_CNN) was trained on binary voxel structures, not probability maps.
+Feeding soft GAN outputs causes OOD estimator behavior. Additionally `true` [3B] and
+`pred` [3B,1] shapes broadcast to [3B,3B] in `torch.square(true - pred)`.
+Fix would require: retraining estimator on probability maps, OR Gumbel-softmax /
+straight-through to get approximately-binary inputs while keeping gradients.
+Do NOT attempt again without one of those changes.
 
----
-
-## What still needs work (after run5/run6 results)
-
-### If run5 improved total_tpb (main goal of run5)
-Expected result: total_tpb S-value improves from 0.694 F toward 0.70+.
-tau_Ni should stay near 0.75–0.82 M.
-
-### If run6 improved tau_YSZ (main goal of run6)
-tau_YSZ stuck at 0.479–0.484 F across all runs 0–4. The 3× gradient weight
-is the next most promising fix short of a fundamentally different approach.
-
-### Task 5 — SSA gradient bug (after tau metrics are addressed)
-`_loss_ssa` severs gradients: `torch.no_grad() + .detach() + .requires_grad_()`.
-Note: SSA loss is ALSO disabled by `timing=9999` (never added to G_loss in 50 epochs).
-Fix requires both: (1) remove the no_grad/detach, and (2) set timing to a real epoch
-(e.g. timing=10 so SSA trains after the generator has formed recognizable structures).
-Only attempt after tau metrics are improved — avoid too many simultaneous changes.
-
-### Task 6 — Branch hygiene
-- Update RESULTS.md with run5 and run6 S-values once pipeline finishes
-- Decide what to merge to master (probably tpb-proxy after run5 results confirm no regressions)
-- Tag important checkpoints in the git history
+### Branch hygiene
+- Update RESULTS.md with run8 S-values once done
+- Decide what to merge to master (tpb-proxy is cleanest baseline)
+- Tag important checkpoints in git history
 
 ---
 
@@ -255,8 +266,9 @@ Only attempt after tau metrics are improved — avoid too many simultaneous chan
 - **Always pass --data ../real_data** when training. Omitting uses synthetic_data
   (only 13 batches/epoch, different distribution). This caused run3's failure.
 - log.dat accumulates across ALL training runs. To detect current run's entries,
-  grep for a column unique to that run (e.g. `tpb_loss` for run5/run6).
-- The overnight pipeline uses `git worktree` for run6 so log.dat is not clobbered
-  by a branch switch. Run6 trains in `C:\Users\alin2\GAN-PH-run6\`.
+  grep for a column unique to that run (e.g. `tpb_loss` for run5/run6/run8).
 - matplotlib.use('Agg') must be set before pyplot import — avoids TkAgg crash in
   background processes on Windows.
+- **SSA estimator is MONITORING-ONLY** (timing=9999). Do not enable as a loss
+  without fixing: (a) estimator retrained on prob maps, (b) shape broadcast bug
+  (need to squeeze pred or unsqueeze true so shapes are [3B] vs [3B]).
