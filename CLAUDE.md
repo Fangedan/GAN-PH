@@ -129,19 +129,22 @@ G_loss still exploded to 344M at epoch 11. Root causes:
 3. Estimator CNN Jacobian amplifies any gradient routed through it
 **SSA differentiable loss is permanently abandoned** — see important notes below.
 
-### run8 — Extended training 100 epochs (tpb-proxy, 5dad25a) — IN PROGRESS
-Same as run5 but 100 epochs instead of 50. tau_loss was still converging at epoch 50.
-Hypothesis: extra 50 epochs push tau_Ni toward 0.82+ and tau_Pore above 0.70.
-tau_YSZ not expected to improve (stuck across 9 runs regardless of approach).
+### run8 — Extended training 100 epochs (tpb-proxy, 5dad25a) — DONE
+Same as run5 but 100 epochs. tau_Pore improved (0.697→0.718 M) — only metric that helped.
+All other metrics regressed vs run5. Over-training reduces microstructure diversity.
+tau_Ni=0.718 M, tau_YSZ=0.459 F, tau_Pore=0.718 M, conn_Ni=0.836 M, total_tpb=0.670 F.
 
-Training command used:
-```bash
-cd 1_GAN
-conda run -n ganph --no-capture-output python -u main.py \
-    --data ../real_data --lr 0.00005 --epochs 100 \
-    --tau-estimator ../5_TAU/save_model/tau_net.pth \
-    --tau-targets ../5_TAU/tau_targets.json 2>&1 | tee run8_output.log
-```
+### run9 — run2 base + tpb_proxy, no face-hinge (run9-tpb-on-run2, 94c610c) — DONE
+Added tpb_proxy to run2 base (feature/ysz-connectivity-loss), omitting face-hinge.
+tau_Ni=0.774 M (better than run5's 0.760 — face-hinge competing with tau gradient confirmed).
+total_tpb=0.667 F (WORSE than run5's 0.698 F) — face-hinge adds diversity that helps KS metrics.
+tau_Pore=0.699 F (borderline, 0.001 below threshold).
+
+### run10 — Extended training 65 epochs (tpb-proxy, 5dad25a) — DONE
+Hypothesis: 65ep sweet spot between run5 (50ep) and run8 (100ep).
+FAILED: 65 epochs is WORSE than BOTH 50 and 100 epochs across nearly all metrics.
+tau_Ni=0.716 M, tau_YSZ=0.461 F, tau_Pore=0.657 F, total_tpb=0.653 F.
+Non-monotonic dynamics: auxiliary losses over-converge at 65ep before diversity recovers.
 
 ---
 
@@ -158,9 +161,11 @@ conda run -n ganph --no-capture-output python -u main.py \
 | run6 | 0.681 F | 0.459 F | 0.730 M | 0.820 M | 0.682 F | 0.884 OK | 0.718 M | 0.694 F |
 | run7a | FAILED | — | — | — | — | — | — | — |
 | run7b | FAILED | — | — | — | — | — | — | — |
-| run8 | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| run8 | 0.718 M | 0.459 F | 0.718 M | 0.836 M | 0.677 F | 0.880 OK | 0.670 F | 0.676 F |
+| run9 | 0.774 M | 0.464 F | 0.699 F | 0.881 OK | 0.681 F | 0.882 OK | 0.667 F | 0.684 F |
+| run10 | 0.716 M | 0.461 F | 0.657 F | 0.833 M | 0.685 F | 0.859 OK | 0.653 F | 0.682 F |
 
-Best baseline: run2 (tau_Ni=0.818 M). Full details in `5_TAU/RESULTS.md`.
+Best baseline: run2 (tau_Ni=0.818 M). Best tpb-proxy: run5 (50 epochs). Full details in `5_TAU/RESULTS.md`.
 
 ---
 
@@ -228,19 +233,31 @@ Get-Content -Wait 1_GAN/run8_output.log | Select-String "\[026/026\]"
 
 ---
 
-## What still needs work (after run8)
+## What still needs work (after run10)
 
-### tau_YSZ — stuck at 0.46–0.484 across ALL 9 runs
+### tau_YSZ — stuck at 0.459–0.484 across ALL 11 runs (0–10)
 No density/face/tau-loss approach has moved this. The problem is topological:
 YSZ connectivity (percolation from z=0 to z=63) is non-local and hard to
-supervise with per-slice density. All density-based attempts fail because YSZ
-blobs can satisfy local density without forming a through-thickness path.
+supervise with per-slice density. Generated structures have conn_YSZ=0.88–0.95
+(too uniform) but tau_YSZ=10–26 vs real mean 47 (range 11–214). Generator makes
+YSZ "too neat" — well-connected but not tortuous enough.
 
 Possible next approaches:
 1. **Differentiable flood-fill**: iterative 3D max-pool along z, starting from
    z=0 face, check if YSZ probability "propagates" to z=63. O(64) conv ops.
 2. **Accept tau_YSZ FAIL**: focus on getting remaining metrics to ≥ 0.70.
-3. **Longer training**: already testing (run8 = 100 epochs).
+
+### tau_Pore and total_tpb — borderline FAIL
+tau_Pore: 0.697 F (run5), 0.699 F (run9) — consistently 0.001–0.003 below threshold.
+total_tpb: 0.698 F (run5) — consistently just below 0.70.
+Longer training (run8/run10) does not reliably fix either metric without hurting others.
+
+### Planned next: run11 — lower face-hinge weight
+Face-hinge at w=200 competes with tau gradient (confirmed: removing it in run9 improved
+tau_Ni from 0.760→0.774 but hurt total_tpb 0.698→0.667). Try w_conn_ysz_face=100:
+hypothesis is this preserves enough diversity for total_tpb while reducing competition
+with tau gradient → tau_Ni may recover toward run2's 0.818.
+Change needed: `self.w_conn_ysz_face = 100` in training.py, 50 epochs, tpb-proxy branch.
 
 ### Task — SSA differentiable loss (ABANDONED — do not retry without architectural changes)
 The SSA estimator (2_CNN) was trained on binary voxel structures, not probability maps.

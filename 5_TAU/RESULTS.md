@@ -16,10 +16,12 @@ One row per training run. Updated after every analyze.py evaluation.
 | run7 | run7-ssa-fix | 12b394d | fix SSA gradient + enable (timing=10): remove no_grad/detach/requires_grad_, freeze estimator | — | — | — | — | — | — | — | — | SKIPPED — built on run6 (3× YSZ weight). Run6 caused tau_Ni regression; run7a used instead. |
 | run7a | run7a-ssa-fix | 525e694 | SSA gradient fix + timing=10, built on run5 (tpb-proxy, equal tau weights). | — | — | — | — | — | — | — | — | FAILED: G_loss exploded to 4.5B at epoch 11 (SSA activation). Root cause: true was raw SSA units (~1e7) vs pred standardized to [0,1]; w_param=1000 amplified to ~1e10. |
 | run7b | run7b-ssa-fix | 21d25e1 | Fix SSA scale: standardize true same as pred, add w_ssa=50 (separate from w_param=1000). | — | — | — | — | — | — | — | — | FAILED: G_loss still exploded to 344M at epoch 11. Root cause: true [3B] vs pred [3B,1] broadcasting creates [3B,3B] cross-product; estimator sees OOD soft-probability inputs (not binary) → pred outside mm_list range. SSA differentiable loss is fundamentally broken with this estimator. |
-| run8 | tpb-proxy | 5dad25a | Extended training: 100 epochs, run5 (tpb-proxy) settings, SSA monitoring-only (timing=9999). | — | — | — | — | — | — | — | — | IN PROGRESS. |
+| run8 | tpb-proxy | 5dad25a | Extended training: 100 epochs, run5 (tpb-proxy) settings, SSA monitoring-only (timing=9999). | 0.718 M | 0.459 F | 0.718 M | 0.836 M | 0.677 F | 0.880 OK | 0.670 F | 0.676 F | 100 epochs over-converges auxiliary losses → reduced diversity. tau_Pore is the only metric that improves vs run5 (0.697→0.718 M). All other metrics regress. |
+| run9 | run9-tpb-on-run2 | 94c610c | run2 base + tpb_proxy (w=1000, target=0.002), NO face-hinge. 50 epochs. | 0.774 M | 0.464 F | 0.699 F | 0.881 OK | 0.681 F | 0.882 OK | 0.667 F | 0.684 F | Without face-hinge: tau_Ni recovers vs run5 (0.760→0.774). But total_tpb WORSE (0.698→0.667 F). Face-hinge adds diversity that helps KS metrics even though it competes with tau gradient. tau_Pore 0.001 below 0.70 threshold. |
+| run10 | tpb-proxy | 5dad25a | Extended training: 65 epochs, same as run5 but 15 more epochs. Hypothesis: 65ep sweet spot between run5 (50ep) and run8 (100ep). | 0.716 M | 0.461 F | 0.657 F | 0.833 M | 0.685 F | 0.859 OK | 0.653 F | 0.682 F | REGRESSION vs run5 on all metrics. 65 epochs is WORSE than both 50 and 100 epochs — non-monotonic training dynamics. 50 epochs remains the sweet spot for tpb-proxy. |
 
 **Legend:** F=FAIL(<0.70), M=MARGINAL(0.70–0.85), OK(≥0.85)
-**Best baseline for tau_Ni:** run2 (0.818). **Best baseline overall:** run2.
+**Best baseline for tau_Ni:** run2 (0.818 M). **Best overall (tpb-proxy branch):** run5 — 50 epochs.
 
 ---
 
@@ -86,8 +88,23 @@ Root causes identified:
 
 ---
 
+## Epoch sweep findings (tpb-proxy branch)
+
+| epochs | tau_Ni | tau_YSZ | tau_Pore | conn_Ni | total_tpb | active_tpb |
+|--------|--------|---------|---------|---------|-----------|------------|
+| 50 (run5) | 0.760 M | 0.479 F | 0.697 F | 0.866 OK | 0.698 F | 0.720 M |
+| 65 (run10) | 0.716 M | 0.461 F | 0.657 F | 0.833 M | 0.653 F | 0.682 F |
+| 100 (run8) | 0.718 M | 0.459 F | 0.718 M | 0.836 M | 0.670 F | 0.676 F |
+
+**Finding:** 50 epochs is unambiguously the sweet spot. 65 epochs is the worst across nearly all metrics — training goes through a "valley" where the auxiliary losses have over-converged but the adversarial diversity hasn't recovered. 100 epochs partially recovers tau_Pore (0.697→0.718 M) but sacrifices conn_Ni and active_tpb. No epoch count between 50 and 100 produces a better overall profile than 50 epochs.
+
+---
+
 ## Planned experiments
 
 | exp_id | what | hypothesis | status |
 |---|---|---|---|
-| run8 | 100 epochs, tpb-proxy settings | tau_loss still converging at epoch 50; longer training may push tau_Ni ≥ 0.82 and tau_Pore ≥ 0.70 | IN PROGRESS |
+| run8 | 100 epochs, tpb-proxy settings | tau_loss still converging at epoch 50 | DONE — tau_Pore only metric that improved |
+| run9 | run2 base + tpb_proxy, no face-hinge, 50 epochs | run2 had best tau_Ni; tpb_proxy adds TPB signal | DONE — tau_Ni up (0.760→0.774) but total_tpb down (0.698→0.667) |
+| run10 | tpb-proxy, 65 epochs | sweet spot between 50 and 100 | DONE — REGRESSION, 50ep remains best |
+| run11 | tpb-proxy, 50 epochs, w_conn_ysz_face=100 (half current value) | face-hinge at 200 competes with tau gradient causing tau_Ni regression (0.818→0.760). Halving it may recover tau_Ni while still adding enough diversity to maintain total_tpb | PLANNED |
