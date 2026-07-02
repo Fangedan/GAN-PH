@@ -144,7 +144,29 @@ tau_Pore=0.699 F (borderline, 0.001 below threshold).
 Hypothesis: 65ep sweet spot between run5 (50ep) and run8 (100ep).
 FAILED: 65 epochs is WORSE than BOTH 50 and 100 epochs across nearly all metrics.
 tau_Ni=0.716 M, tau_YSZ=0.461 F, tau_Pore=0.657 F, total_tpb=0.653 F.
-Non-monotonic dynamics: auxiliary losses over-converge at 65ep before diversity recovers.
+Non-monotonic dynamics: tau loss enters a "valley" at ep60-75 (tau_Ni→0.566 F).
+
+### run11 — Halved face-hinge weight (run11-half-face-hinge, ace571a) — DONE
+w_conn_ysz_face: 200→100. SEVERE REGRESSION: tau_Ni=0.682 F (was 0.760 M).
+Face-hinge at 200 is a load-bearing equilibrium, not a competing bottleneck.
+
+### run12 — Lower global tau weight (run12-lower-tau-weight, 7d90c1e) — DONE
+w_tau: 50→20 (all phases). tau_Pore improved 0.697→0.749 M (Pore over-constraint reduced).
+tau_Ni crashed 0.760→0.550 F. Phase-specific finding: Pore tau over-constrains its narrow
+natural distribution (std_log=0.0319); Ni tau needs the full signal strength.
+
+### run13 — Ni-only tau loss (run13-ni-tau-only, 53670ff) — DONE
+Applied tau loss to Ni phase only (removed YSZ+Pore). tau_Pore=0.819 M (best ever!).
+But tau_Ni still crashed to 0.560 F. Root cause: with Ni-only, the tau loss FULLY
+converges (tau_loss: 0.31→0.006 at epoch 50) → all Ni samples same tau → KS FAIL.
+KEY INSIGHT: in run5, the 3-phase gradient competition prevents any single phase from
+fully converging (natural adversarial equilibrium). Removing phases breaks this.
+
+### run14 — Per-phase tau weights Pore=0.05× (run14-weighted-pore-tau, 2d21b73) — IN PROGRESS
+Ni=1.0, YSZ=1.0, Pore=0.05 per-phase tau weights. Restores 3-phase gradient
+competition to protect tau_Ni diversity while barely constraining Pore variance.
+Hypothesis: tau_Ni recovers to ~0.760 M AND tau_Pore improves toward 0.75 M —
+first time both ≥0.70 simultaneously. Results TBD.
 
 ---
 
@@ -164,8 +186,12 @@ Non-monotonic dynamics: auxiliary losses over-converge at 65ep before diversity 
 | run8 | 0.718 M | 0.459 F | 0.718 M | 0.836 M | 0.677 F | 0.880 OK | 0.670 F | 0.676 F |
 | run9 | 0.774 M | 0.464 F | 0.699 F | 0.881 OK | 0.681 F | 0.882 OK | 0.667 F | 0.684 F |
 | run10 | 0.716 M | 0.461 F | 0.657 F | 0.833 M | 0.685 F | 0.859 OK | 0.653 F | 0.682 F |
+| run11 | 0.682 F | 0.468 F | 0.686 F | 0.811 M | 0.693 F | 0.861 OK | 0.648 F | 0.697 F |
+| run12 | 0.550 F | 0.473 F | 0.749 M | 0.745 M | 0.693 F | 0.891 OK | 0.676 F | 0.697 F |
+| run13 | 0.560 F | 0.462 F | 0.819 M | 0.740 M | 0.696 F | 0.899 OK | 0.601 F | 0.675 F |
+| run14 | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
 
-Best baseline: run2 (tau_Ni=0.818 M). Best tpb-proxy: run5 (50 epochs). Full details in `5_TAU/RESULTS.md`.
+Best tau_Ni: run2 (0.818 M). Best tpb-proxy: run5 (50 ep). Best tau_Pore: run13 (0.819 M). Full details in `5_TAU/RESULTS.md`.
 
 ---
 

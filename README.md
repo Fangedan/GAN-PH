@@ -232,7 +232,30 @@ python 4_CNNCT/analyze.py --input ../synthetic_data --compare ../generated_data 
 
 ## Key Results
 
-### Real DREAM.3D data — first end-to-end validation
+### Tortuosity-aware training — current best (run5, tpb-proxy branch)
+
+After 14 training experiments adding tortuosity supervision and TPB-density targets, the best overall configuration uses:
+- **τ-net surrogate loss** (frozen 3D CNN predicting log(τ), all 3 phases, w=50)
+- **Near-TPB density proxy** (Ni×YSZ×Pore probability product, target=0.002, w=1000)
+- **YSZ face-hinge loss** (face density at z=0/z=63, threshold=0.18, w=200)
+- **50 epochs** (sweet spot — 65/100 epochs both reduce KS metrics through loss over-convergence)
+
+| Metric | S-value | Interpretation |
+|--------|---------|----------------|
+| Ni tortuosity | 0.760 | Marginal |
+| Pore tortuosity | 0.697 | Marginal (borderline) |
+| YSZ tortuosity | 0.479 | FAIL (stuck across all runs — see below) |
+| Ni connectivity | **0.866** | OK |
+| Pore connectivity | **0.874** | OK |
+| YSZ connectivity | 0.704 | Marginal |
+| Total TPB density | 0.698 | Marginal (borderline) |
+| Active TPB density | 0.720 | Marginal |
+
+**Key finding — tau loss convergence dynamics:** The 3-phase tau MSE loss must stay *partially unconverged* at 50 epochs (tau_loss ≈ 0.31) to maintain microstructure diversity. When the loss fully converges (e.g., Ni-only at epoch 50: tau_loss → 0.006), all samples converge to the same tortuosity value, variance collapses, and the KS S-score fails. Run14 (in progress) tests per-phase weights (Pore=0.05×) to improve tau_Pore without breaking tau_Ni diversity.
+
+**tau_YSZ is permanently stuck at 0.46–0.48 FAIL** across all 14 runs. Generated structures have connected YSZ (conn_YSZ ~0.70 M) but tau_YSZ ≈ 10–26 vs real mean 47 (range 11–214). YSZ topology (percolation) is non-local — density-based losses all fail. Would require differentiable flood-fill or architectural changes.
+
+### Real DREAM.3D data — first end-to-end validation (baseline, connectivity loss only)
 
 The full pipeline was run on **101 real Ni-YSZ microstructures** (DREAM.3D FIB-SEM exports, phase fractions ~Ni 23% / YSZ 21% / Pore 56%). 100 structures were generated, conditioned on the real (VF, SSA) labels, and compared to the training set with Yu et al. S-values:
 
@@ -247,7 +270,6 @@ The full pipeline was run on **101 real Ni-YSZ microstructures** (DREAM.3D FIB-S
 
 - **No phase collapsed** — every generated structure percolates in pore, the failure mode the original model produced 47/50 of the time on synthetic data.
 - **Ni and pore connectivity reproduced the real material in the OK band**, and notably **Ni connectivity was never a training target** — it emerged from learning the real distribution.
-- The marginal metrics are driven by *distribution shape*, not fragmentation: the generator produces more consistent, better-connected structures than the real set, which contains a low tail of defective structures (some with non-percolating YSZ, likely a 167³→64³ downsampling artifact). The S-value penalizes that mismatch even though the generated structures are, if anything, "too clean."
 
 ### Connectivity loss on synthetic data — fixing pore collapse
 
