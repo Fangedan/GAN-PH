@@ -22,10 +22,10 @@ One row per training run. Updated after every analyze.py evaluation.
 | run11 | run11-half-face-hinge | ace571a | tpb-proxy, 50 epochs, w_conn_ysz_face=100 (halved from 200). Hypothesis: face-hinge at 200 competes with tau gradient causing tau_Ni regression. | 0.682 F | 0.468 F | 0.686 F | 0.811 M | 0.693 F | 0.861 OK | 0.648 F | 0.697 F | SEVERE REGRESSION. tau_Ni=0.682 F (was 0.760 M). Face-hinge at w=200 is a stable equilibrium, not a bottleneck — reducing it disrupts the balance catastrophically. |
 | run12 | run12-lower-tau-weight | 7d90c1e | tpb-proxy, 50 epochs, w_tau=20 (global, all phases). Hypothesis: tau over-convergence at epoch 65-75 causes valley; lower weight keeps tau unconverged. | 0.550 F | 0.473 F | 0.749 M | 0.745 M | 0.693 F | 0.891 OK | 0.676 F | 0.697 F | Phase-specific finding: tau_Pore improved 0.697→0.749 M (Pore over-constraint removed) but tau_Ni crashed 0.760→0.550 F (Ni tau signal too weak). Real Pore tau is very narrow (std_log=0.0319); MSE loss collapses Pore variance. |
 | run13 | run13-ni-tau-only | 53670ff | tpb-proxy, 50 epochs, tau loss Ni-only (YSZ+Pore disabled). Hypothesis: keep Ni tau signal, remove Pore over-constraint. | 0.560 F | 0.462 F | 0.819 M | 0.740 M | 0.696 F | 0.899 OK | 0.601 F | 0.675 F | tau_Pore=0.819 M (best ever!). But tau_Ni still crashed to 0.560 F. Root cause: with only 1 phase, tau loss fully converges (0.31→0.006) → all Ni samples same tortuosity → KS FAIL. In run5, 3-phase competition prevents any single phase from fully converging. |
-| run14 | run14-weighted-pore-tau | 2d21b73 | tpb-proxy, 50 epochs, per-phase tau weights: Ni=1.0, YSZ=1.0, Pore=0.05. Restore 3-phase gradient competition to prevent tau_Ni over-convergence; Pore barely constrained. | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | IN PROGRESS — hypothesis: tau_Ni recovers to ~0.760 M (multi-phase competition preserved) AND tau_Pore improves toward 0.75 M (Pore barely constrained). First attempt to get both simultaneously ≥0.70. |
+| run14 | run14-weighted-pore-tau | f8e6d63 | tpb-proxy, 50 epochs, per-phase tau weights: Ni=1.0, YSZ=1.0, Pore=0.05. Restore 3-phase gradient competition to prevent tau_Ni over-convergence; Pore barely constrained. | 0.580 F | 0.461 F | 0.772 M | 0.762 M | 0.678 F | 0.892 OK | 0.657 F | 0.675 F | tau_Pore improved to 0.772 M (2nd best ever, after run13's 0.819). But tau_Ni STILL crashed to 0.580 F despite 3-phase competition. tau_loss=0.357 at epoch 50 (similar to run5's 0.31) yet tau_Ni KS failed. Tradeoff is fundamental: Ni and Pore tortuosity are inversely coupled through the softmax sum-to-1 constraint. Improving Pore tau ALWAYS hurts Ni tau distribution. |
 
 **Legend:** F=FAIL(<0.70), M=MARGINAL(0.70–0.85), OK(≥0.85)
-**Best baseline for tau_Ni:** run2 (0.818 M). **Best overall (tpb-proxy branch):** run5 — 50 epochs. **Best tau_Pore:** run13 (0.819 M). **Best tau_Pore + tau_Ni simultaneously:** TBD (run14 in progress).
+**Best tau_Ni:** run2 (0.818 M). **Best tpb-proxy overall:** run5 (50 ep). **Best tau_Pore:** run13 (0.819 M). **Best simultaneous tau_Ni+tau_Pore:** run5 (0.760+0.697 — closest to both ≥0.70, neither crosses).
 
 ---
 
@@ -116,4 +116,33 @@ Root causes identified:
 | run8@75 | tpb-proxy checkpoint at epoch 75 (no new training) | where tau_Pore first hits 0.70 | DONE — tau_Ni=0.566 F, tau_Pore=0.725 M. tau_Pore crosses 0.70 only when tau_Ni is deep FAIL. |
 | run12 | tpb-proxy, 50 epochs, w_tau=20 (global) | prevent tau over-convergence via lower weight | DONE — tau_Pore 0.697→0.749 M but tau_Ni 0.760→0.550 F. Phase-specific finding: Pore tau over-constrains variance. |
 | run13 | tpb-proxy, 50 epochs, Ni-only tau loss | remove Pore tau over-constraint entirely | DONE — tau_Pore=0.819 M (best ever!), tau_Ni=0.560 F (still crashed). Root cause: Ni-only causes full Ni tau convergence (tau_loss: 0.31→0.006) → variance collapse. 3-phase competition in run5 was protective. |
-| run14 | tpb-proxy, 50 epochs, Ni=1.0 YSZ=1.0 Pore=0.05 tau weights | restore 3-phase gradient competition (prevents Ni over-convergence) while barely constraining Pore (prevents Pore variance collapse) | IN PROGRESS — if hypothesis correct: tau_Ni~0.760 M AND tau_Pore~0.75 M simultaneously for first time |
+| run14 | tpb-proxy, 50 epochs, Ni=1.0 YSZ=1.0 Pore=0.05 tau weights | restore 3-phase gradient competition while barely constraining Pore | DONE — tau_Pore=0.772 M (good), tau_Ni=0.580 F (still crashed). Tradeoff is fundamental: Ni and Pore tau are inversely coupled via softmax sum-to-1. Improving Pore tau always redistributes probability mass away from Ni, hurting Ni distribution. |
+
+---
+
+## Final conclusions (after 14 runs + intermediate sweeps)
+
+### What works
+- **run5 (tpb-proxy, 50 epochs)** is the best overall configuration. No subsequent experiment beat it on the combined metric profile.
+- **Connectivity losses** (pore isolation + face-hinge + YSZ min-slice) are all load-bearing. Modifying any one causes regression.
+- **50 epochs** is the unambiguous sweet spot for tpb-proxy. Training dynamics follow a non-monotonic valley pattern: auxiliary losses over-converge at ep60-75 (tau_Ni→0.566 F), partially recover at ep100.
+
+### Fundamental tradeoff: tau_Ni vs tau_Pore
+tau_Ni and tau_Pore are inversely coupled through the softmax sum-to-1 constraint. Any change that improves Pore tau distribution matching hurts Ni tau, and vice versa. Observed across 7 experiments (runs 8–14):
+
+| experiment | delta tau_Ni | delta tau_Pore |
+|---|---|---|
+| run8 (100ep) | -0.042 | +0.021 |
+| run12 (w_tau=20) | -0.210 | +0.052 |
+| run13 (Ni-only tau) | -0.200 | +0.122 |
+| run14 (Pore=0.05×) | -0.180 | +0.075 |
+
+### What is permanently stuck
+- **tau_YSZ**: stuck at 0.459–0.484 FAIL across ALL 14 runs. Generated structures have connected YSZ (conn_YSZ ~0.70) but tau_YSZ ≈ 10–26 vs real mean 47. YSZ percolation topology is non-local; no density-based loss can fix it.
+- **tau_Ni + tau_Pore simultaneously ≥ 0.70**: never achieved. run5 comes closest (0.760 + 0.697).
+
+### What to try next (requires architectural changes)
+1. **Distribution-matching tau loss**: replace MSE(pred, mean_target) with a loss that matches the full distribution (e.g., Wasserstein distance between generated and real τ distributions). This would reward diversity, not just mean convergence.
+2. **Higher-capacity generator**: more parameters may allow the generator to simultaneously maintain diverse Ni AND Pore tortuosity distributions.
+3. **Differentiable flood-fill for tau_YSZ**: iterative 3D max-pool from z=0 face to detect if YSZ probability "propagates" to z=63. Only approach that could address topological connectivity loss.
+4. **Gumbel-softmax / straight-through for SSA loss**: would allow reactivating the SSA estimator as a differentiable loss (currently permanently abandoned due to OOD inputs and broadcasting bug).

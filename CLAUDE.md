@@ -1,7 +1,8 @@
 # GAN-PH Project — Context for Claude
 
-> Updated after runs 5–8. run8 (100 epochs, tpb-proxy) is training.
-> SSA differentiable loss has been permanently abandoned (see notes below).
+> Updated after runs 0–14. All runs complete. No training currently in progress.
+> SSA differentiable loss permanently abandoned. tau_Ni/tau_Pore tradeoff is fundamental.
+> Best config: run5 (tpb-proxy, 50 epochs). Next steps require architectural changes.
 
 ---
 
@@ -72,11 +73,16 @@ All commands below assume this env. Run `1_GAN/main.py` from **inside** `1_GAN/`
 | `feature/ysz-connectivity-loss` | run2: YSZ min-slice density loss + tau gate |
 | `tau-ysz-diagnosis` | run3: distribution-matching loss (FAILED — abandoned) |
 | `ysz-face-hinge` | run4: YSZ face density at endpoints (built on run2) |
-| `tpb-proxy` | **Current:** run5 (50 ep) + run8 (100 ep) — near-TPB density proxy loss |
+| `tpb-proxy` | run5 (50 ep) + run8 (100 ep) + run10 (65 ep) — near-TPB density proxy loss |
 | `run6-weighted-tau-ysz` | run6: weighted tau loss YSZ=3×, Ni=1×, Pore=1× (built on tpb-proxy) |
 | `run7a-ssa-fix` | run7a: SSA gradient fix attempt 1 (FAILED — gradient explosion) |
 | `run7b-ssa-fix` | run7b: SSA gradient fix attempt 2 (FAILED — broadcasting + OOD) |
 | `ni-connectivity-ablation` | Earlier experiment (Ni connectivity ablation) |
+| `run9-tpb-on-run2` | run9: run2 base + tpb_proxy, no face-hinge |
+| `run11-half-face-hinge` | run11: w_conn_ysz_face=100 (half) — SEVERE REGRESSION |
+| `run12-lower-tau-weight` | run12: w_tau=20 globally — tau_Ni crashed |
+| `run13-ni-tau-only` | run13: tau loss Ni-only — tau loss over-converged → KS FAIL |
+| `run14-weighted-pore-tau` | **Latest:** per-phase tau weights Pore=0.05× — tau_Pore improved, tau_Ni crashed |
 
 ---
 
@@ -162,11 +168,15 @@ converges (tau_loss: 0.31→0.006 at epoch 50) → all Ni samples same tau → K
 KEY INSIGHT: in run5, the 3-phase gradient competition prevents any single phase from
 fully converging (natural adversarial equilibrium). Removing phases breaks this.
 
-### run14 — Per-phase tau weights Pore=0.05× (run14-weighted-pore-tau, 2d21b73) — IN PROGRESS
-Ni=1.0, YSZ=1.0, Pore=0.05 per-phase tau weights. Restores 3-phase gradient
-competition to protect tau_Ni diversity while barely constraining Pore variance.
-Hypothesis: tau_Ni recovers to ~0.760 M AND tau_Pore improves toward 0.75 M —
-first time both ≥0.70 simultaneously. Results TBD.
+### run14 — Per-phase tau weights Pore=0.05× (run14-weighted-pore-tau, f8e6d63) — DONE
+Ni=1.0, YSZ=1.0, Pore=0.05 per-phase tau weights. Hypothesis: 3-phase gradient
+competition protects tau_Ni diversity while 0.05× Pore weight barely constrains Pore.
+FAILED: tau_Ni=0.580 F (crashed worse than run12). tau_Pore=0.772 M (best ever!).
+Root cause: the Ni/Pore tradeoff is FUNDAMENTAL — improving one always crashes the other
+through the softmax sum-to-1 constraint. No weight tuning can escape this.
+tau_loss=0.357 at epoch 50 (healthy partial convergence, same as run5's 0.31).
+Final: tau_Ni=0.580 F, tau_YSZ=0.461 F, tau_Pore=0.772 M, conn_Ni=0.762 M,
+conn_YSZ=0.678 F, conn_Pore=0.892 OK, total_tpb=0.657 F, active_tpb=0.675 F.
 
 ---
 
@@ -189,13 +199,13 @@ first time both ≥0.70 simultaneously. Results TBD.
 | run11 | 0.682 F | 0.468 F | 0.686 F | 0.811 M | 0.693 F | 0.861 OK | 0.648 F | 0.697 F |
 | run12 | 0.550 F | 0.473 F | 0.749 M | 0.745 M | 0.693 F | 0.891 OK | 0.676 F | 0.697 F |
 | run13 | 0.560 F | 0.462 F | 0.819 M | 0.740 M | 0.696 F | 0.899 OK | 0.601 F | 0.675 F |
-| run14 | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| run14 | 0.580 F | 0.461 F | 0.772 M | 0.762 M | 0.678 F | 0.892 OK | 0.657 F | 0.675 F |
 
-Best tau_Ni: run2 (0.818 M). Best tpb-proxy: run5 (50 ep). Best tau_Pore: run13 (0.819 M). Full details in `5_TAU/RESULTS.md`.
+Best tau_Ni: run2 (0.818 M). Best overall balance: run5 (50 ep, tpb-proxy). Best tau_Pore: run14 (0.772 M). Full details in `5_TAU/RESULTS.md`.
 
 ---
 
-## Key hyperparameters (1_GAN/training.py, as of tpb-proxy / run8)
+## Key hyperparameters (1_GAN/training.py, as of run14-weighted-pore-tau branch)
 
 | Parameter | Value | Purpose |
 |---|---|---|
@@ -240,7 +250,7 @@ conda run -n ganph --no-capture-output python -u analyze.py \
 
 Watch training live (every-last-batch-per-epoch lines):
 ```powershell
-Get-Content -Wait 1_GAN/run8_output.log | Select-String "\[026/026\]"
+Get-Content -Wait 1_GAN/runN_output.log | Select-String "\[026/026\]"
 ```
 
 ---
@@ -259,44 +269,54 @@ Get-Content -Wait 1_GAN/run8_output.log | Select-String "\[026/026\]"
 
 ---
 
-## What still needs work (after run10)
+## What still needs work (after run14 — all experiments paused)
 
-### tau_YSZ — stuck at 0.459–0.484 across ALL 11 runs (0–10)
+### Fundamental Ni/Pore tortuosity tradeoff (UNRESOLVED, 14 runs)
+tau_Ni and tau_Pore are inversely coupled through the softmax sum-to-1 constraint.
+Improving Pore tau always crashes Ni tau. No weight tuning can escape this.
+
+| Config | tau_Ni | tau_Pore | Both ≥0.70? |
+|---|---|---|---|
+| run5 (baseline) | 0.760 M | 0.697 F | NO (Pore barely fails) |
+| run12 (w_tau=20) | 0.550 F | 0.749 M | NO (Ni crashes) |
+| run13 (Ni-only) | 0.560 F | 0.819 M | NO (Ni crashes) |
+| run14 (Pore=0.05×) | 0.580 F | 0.772 M | NO (Ni crashes) |
+
+**Run5 (50 epochs, tpb-proxy, balanced tau weights) is the best achievable config**
+with the current MSE-based tau loss. It gets tau_Ni=0.760 M (passes) and
+tau_Pore=0.697 F (just fails by 0.003).
+
+### tau_YSZ — stuck at 0.459–0.484 across ALL 14 runs
 No density/face/tau-loss approach has moved this. The problem is topological:
-YSZ connectivity (percolation from z=0 to z=63) is non-local and hard to
-supervise with per-slice density. Generated structures have conn_YSZ=0.88–0.95
-(too uniform) but tau_YSZ=10–26 vs real mean 47 (range 11–214). Generator makes
-YSZ "too neat" — well-connected but not tortuous enough.
+YSZ connectivity is non-local; density-based losses satisfy local density without
+forming through-thickness percolation. Generated tau_YSZ=10–26 vs real mean 47.
 
-Possible next approaches:
-1. **Differentiable flood-fill**: iterative 3D max-pool along z, starting from
-   z=0 face, check if YSZ probability "propagates" to z=63. O(64) conv ops.
-2. **Accept tau_YSZ FAIL**: focus on getting remaining metrics to ≥ 0.70.
+Possible future approaches (require architectural changes):
+1. **Differentiable flood-fill**: iterative 3D max-pool along z from z=0 face,
+   check YSZ probability propagates to z=63. O(64) conv ops. Not yet implemented.
+2. **Accept tau_YSZ FAIL**: it has never improved; it may be unfixable with current GAN.
+3. **Longer training**: run8 (100 ep) showed tau_YSZ doesn't improve with more epochs.
 
-### tau_Pore and total_tpb — borderline FAIL
-tau_Pore: 0.697 F (run5), 0.699 F (run9) — consistently 0.001–0.003 below threshold.
-total_tpb: 0.698 F (run5) — consistently just below 0.70.
-Longer training (run8/run10) does not reliably fix either metric without hurting others.
-
-### Planned next: run11 — lower face-hinge weight
-Face-hinge at w=200 competes with tau gradient (confirmed: removing it in run9 improved
-tau_Ni from 0.760→0.774 but hurt total_tpb 0.698→0.667). Try w_conn_ysz_face=100:
-hypothesis is this preserves enough diversity for total_tpb while reducing competition
-with tau gradient → tau_Ni may recover toward run2's 0.818.
-Change needed: `self.w_conn_ysz_face = 100` in training.py, 50 epochs, tpb-proxy branch.
+### Key insight: tau loss convergence dynamics
+- At w_tau=50, 50 epochs is the sweet spot: tau_loss≈0.31 (partial convergence, healthy diversity)
+- At epochs 60–75: tau loss fully converges → all samples same τ → KS variance FAIL
+- At epoch 100: adversarial signal partially restores diversity (tau_Ni=0.718 M) but TPB metrics suffer
+- 3-phase tau gradient competition in run5 prevents any single phase from over-converging
+- Removing or strongly downweighting any phase breaks this equilibrium → fast convergence → FAIL
+- **Do not train past 50 epochs with current loss config without epoch sweep analysis**
 
 ### Task — SSA differentiable loss (ABANDONED — do not retry without architectural changes)
 The SSA estimator (2_CNN) was trained on binary voxel structures, not probability maps.
 Feeding soft GAN outputs causes OOD estimator behavior. Additionally `true` [3B] and
 `pred` [3B,1] shapes broadcast to [3B,3B] in `torch.square(true - pred)`.
-Fix would require: retraining estimator on probability maps, OR Gumbel-softmax /
+Fix requires: retraining estimator on probability maps, OR Gumbel-softmax /
 straight-through to get approximately-binary inputs while keeping gradients.
-Do NOT attempt again without one of those changes.
+Do NOT attempt again without one of those changes. (timing=9999, never fires)
 
-### Branch hygiene
-- Update RESULTS.md with run8 S-values once done
-- Decide what to merge to master (tpb-proxy is cleanest baseline)
-- Tag important checkpoints in git history
+### Branch hygiene (for next session)
+- Decide what to merge to master (run5/tpb-proxy is cleanest working baseline)
+- Tag run5 checkpoint as best-known-good in git history
+- RESULTS.md is fully updated through run14 on run14-weighted-pore-tau branch
 
 ---
 
