@@ -1,0 +1,15 @@
+# reference_tau.csv -- Prof. Jin reference tortuosity values for accuracy comparison
+# Fill in real values when received. compare_reference_tau.py reads this file.
+# Lines starting with # are comments and are ignored by the comparison script.
+#
+# Columns:
+#   structure_id  -- directory name matching a folder in real_data/ (e.g., structure_0001)
+#                    or a descriptive label if the structure is not in real_data/
+#   phase         -- Ni | YSZ | Pore  (must match the phase names in analyze.py PHASES dict)
+#   tau_reference -- ground-truth tortuosity factor (float, >1.0; use NaN if not percolating)
+#   source_note   -- free-text description of how the reference value was obtained
+#
+# Example row (delete or replace with real values from Prof. Jin):
+# structure_0001,Ni,12.34,FEM solve on original FIB-SEM volume (Prof. Jin lab 2026-07)
+#
+structure_id,phase,tau_reference,source_note
