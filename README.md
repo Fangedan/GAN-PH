@@ -26,8 +26,11 @@ Based on the paper:
 |----------|--------------|
 | **`0_PRV/`** — ParaView automation | Replaces a manual ParaView workflow with one script (`paraview_slice_export.py`) that turns a DREAM.3D `.vtk` volume into a slice-image stack. Verified lossless end-to-end against ground truth. |
 | **`4_CNNCT/`** — connectivity & TPB analysis | New module measuring pore/Ni/YSZ percolation, active triple-phase-boundary (TPB) density, tortuosity, and Yu et al. S-values — the transport descriptors the original pipeline never checked. |
-| **Differentiable connectivity loss** (`1_GAN/training.py`) | A new generator loss term (isolation penalty + face hinge) that fixes systematic pore collapse on synthetic data — pore-connectivity S-value **0.48 → 0.90**, active-TPB **0.59 → 0.86** (FAIL → OK). A real-data ablation shows it's unnecessary where a phase already percolates (see Key Results). |
+| **`5_TAU/`** — tortuosity surrogate pipeline | τ-net (3D CNN) trained to predict log(τ) per phase; used as a differentiable surrogate loss during GAN training. Also contains `compute_tau_labels.py` (taufactor on real data), `train_tau_net.py`, and `RESULTS.md` (runs 0–14 experiment record). |
+| **Differentiable connectivity + TPB + τ losses** (`1_GAN/training.py`) | Five auxiliary loss terms added to the generator: pore isolation + face hinge, YSZ min-slice density + face-hinge, near-TPB density proxy, and τ-net surrogate. Best config (run5, 50 ep): conn_Ni/Pore OK, active-TPB Marginal. See `CLAUDE.md` for full history. |
 | **`preprocess_dream3d.py`** | Converts DREAM.3D PNG exports into the BMP voxel-stack format the GAN expects. Replaces an existing MATLAB workflow. |
+
+> **Experiment record:** `CLAUDE.md` (this repo) and `5_TAU/RESULTS.md` contain the full 14-run experiment history, scope decisions, and architectural findings. Read them before modifying training losses.
 
 ---
 
@@ -193,20 +196,25 @@ python preprocess_dream3d.py --input ./juan_data --output ./real_data --tile-xy 
 
 ## Stage 1 — Connectivity-aware GAN training (`1_GAN/`)
 
-The conditional WGAN-GP generates a 64³ cube where each voxel is a softmax over (Ni, YSZ, Pore); the final structure is the per-voxel argmax. Training is conditioned on volume fraction and specific surface area via a frozen CNN surrogate (`2_CNN/`).
+**Environment:** `conda activate ganph` (Python 3.10, PyTorch 2.3.1). See Installation below.
 
-### The connectivity loss
+The conditional WGAN-GP generates a 64³ cube where each voxel is a softmax over (Ni, YSZ, Pore); the final structure is the per-voxel argmax. Training is conditioned on volume fraction and specific surface area via a frozen CNN surrogate (`2_CNN/`), and on tortuosity via a frozen τ-net surrogate (`5_TAU/`).
 
-The original generator optimized only composition (VF, SSA), both measured on the softmax probabilities. Because the structure is built from the *argmax*, the generator could satisfy the volume-fraction target with uniform pore-probability everywhere while never letting pore win a single voxel — driving the pore phase to collapse. The result: structures with correct composition but no connected pore network, and therefore almost no active reaction sites.
+### Loss terms (run5 / best known configuration)
 
-`_loss_connectivity()` adds two fully differentiable terms to the generator loss:
+The generator loss has five auxiliary terms beyond the standard WGAN critic loss:
 
-- **Isolation penalty** — a 3D convolution with a 6-connectivity kernel counts each voxel's face-adjacent pore neighbors; `pore_prob × (1 − neighbor_pore/6)` penalizes isolated pore voxels and rewards clustered, connected ones.
-- **Face hinge** — `ReLU(solid − pore + 0.05)` at the z = 0 and z = 63 faces penalizes solid dominating pore at the electrode entry/exit. Critically, this term still produces a gradient when pore has collapsed to zero (when the isolation penalty has none), bootstrapping the pore phase back into existence.
+- **Isolation penalty + face hinge** (`_loss_connectivity`, w=50) — 3D convolution kernel counts face-adjacent pore neighbors; penalizes isolated pore voxels. A face hinge at z=0/z=63 bootstraps pore back from collapse.
+- **YSZ min-slice density** (`_loss_connectivity_ysz`, w=200) — ReLU penalty if any z-slice drops below 10% YSZ mean density.
+- **YSZ face-hinge** (`_loss_connectivity_ysz_face`, w=200) — YSZ must appear on both z=0 and z=63 faces (threshold 18%), targeting topological entry/exit.
+- **Near-TPB density proxy** (`_loss_tpb_proxy`, w=1000) — Ni×YSZ×Pore probability product; targets 0.002, preventing the low-TPB tail that drives S-value FAIL.
+- **τ-net surrogate** (`_loss_tortuosity`, w=50, activates epoch 10) — frozen 3D CNN predicts log(τ) for all three phases; MSE against real-data mean log(τ) targets.
 
 ```
-G_loss = g_loss + 1000 × (loss_vf + loss_ssa) + 50 × loss_connectivity
+G_loss = WGAN + 1000×(vf + ssa) + 50×pore_conn + 200×ysz_density + 200×ysz_face + 1000×tpb + 50×tau
 ```
+
+See `CLAUDE.md` for the full hyperparameter table and `5_TAU/RESULTS.md` for the experiment record (runs 0–14).
 
 ---
 
@@ -232,7 +240,31 @@ python 4_CNNCT/analyze.py --input ../synthetic_data --compare ../generated_data 
 
 ## Key Results
 
-### Real DREAM.3D data — first end-to-end validation
+### Best configuration: run5 (tpb-proxy, 50 epochs)
+
+After 14 training experiments (runs 0–14), the best overall configuration uses the run5 setup: TPB proxy loss + τ-net surrogate + YSZ face-hinge + 50 epochs. See `5_TAU/RESULTS.md` for the full experiment record and `CLAUDE.md` for the complete experiment history.
+
+> **Scope note (Prof. Jin, 2026-07):** Tortuosity (tau_Ni, tau_YSZ, tau_Pore) has been descoped as a success criterion. These metrics are still computed and reported but are **informational only** — excluded from pass/fail scoring. The primary success axes are **active TPB density** and **phase connectivity/percolation**. See `CLAUDE.md → SCOPE DECISION (2026-07)` for the full rationale.
+
+**Scored metrics — run5 (50 epochs):**
+
+| Metric | S-value | Interpretation |
+|--------|---------|----------------|
+| Ni connectivity | **0.866** | OK |
+| Pore connectivity | **0.874** | OK |
+| YSZ connectivity | 0.704 | Marginal |
+| Total TPB density | 0.698 | Marginal (borderline) |
+| Active TPB density | 0.720 | Marginal |
+
+**Informational (tau metrics, not scored):**
+
+| Metric | S-value | Note |
+|--------|---------|------|
+| Ni tortuosity | 0.760 | Marginal — best achieved in runs 0–14 |
+| Pore tortuosity | 0.697 | Marginal (borderline) |
+| YSZ tortuosity | 0.479 | FAIL — stuck 0.46–0.48 across all 14 runs; non-local topology problem |
+
+### Real DREAM.3D data — first end-to-end validation (baseline, connectivity loss only)
 
 The full pipeline was run on **101 real Ni-YSZ microstructures** (DREAM.3D FIB-SEM exports, phase fractions ~Ni 23% / YSZ 21% / Pore 56%). 100 structures were generated, conditioned on the real (VF, SSA) labels, and compared to the training set with Yu et al. S-values:
 
@@ -247,7 +279,6 @@ The full pipeline was run on **101 real Ni-YSZ microstructures** (DREAM.3D FIB-S
 
 - **No phase collapsed** — every generated structure percolates in pore, the failure mode the original model produced 47/50 of the time on synthetic data.
 - **Ni and pore connectivity reproduced the real material in the OK band**, and notably **Ni connectivity was never a training target** — it emerged from learning the real distribution.
-- The marginal metrics are driven by *distribution shape*, not fragmentation: the generator produces more consistent, better-connected structures than the real set, which contains a low tail of defective structures (some with non-percolating YSZ, likely a 167³→64³ downsampling artifact). The S-value penalizes that mismatch even though the generated structures are, if anything, "too clean."
 
 ### Connectivity loss on synthetic data — fixing pore collapse
 
@@ -339,21 +370,44 @@ cd 2_CNN        # edit main.py: set Input_header and n_struc
 python main.py
 ```
 
-### Step 3 — Train the GAN
+### Step 2.5 — Compute τ labels and train the τ-net surrogate (required for run5 config)
 ```bash
-cd ../1_GAN     # edit main.py: set in_header, n_struc, path to CNN weights
-python main.py
+cd 5_TAU
+# If tau_labels.csv doesn't exist yet (~30–90 min on CPU):
+conda run -n ganph --no-capture-output python compute_tau_labels.py --data ../real_data
+# Train the τ-net (~10 min on CPU):
+conda run -n ganph --no-capture-output python train_tau_net.py --data ../real_data --labels tau_labels.csv
 ```
 
-### Step 4 — Validate
+### Step 3 — Train the GAN
 ```bash
-cd ../3_PH      # topological validation
-python 1_PD.py && python 2_PI.py && python 3_PCA.py
+# IMPORTANT: always pass --data ../real_data
+# Omitting it silently trains on synthetic_data (13 batches/epoch vs 26, different distribution).
+# This caused run3's total collapse (W_D=900, all tau=NaN). Do not omit.
+cd 1_GAN
+conda run -n ganph --no-capture-output python -u main.py \
+    --data ../real_data \
+    --lr 0.00005 \
+    --epochs 50 \
+    --tau-estimator ../5_TAU/save_model/tau_net.pth \
+    --tau-targets ../5_TAU/tau_targets.json
+# On CPU: ~90–100 min per 50 epochs (26 batches/epoch, batch size 4)
+```
 
-cd ../4_CNNCT   # transport validation
-python generate_structures.py
-python analyze.py --input ../generated_data --output generated_connectivity.csv --no-tau
-python plot_results.py
+### Step 4 — Generate and validate
+```bash
+cd 4_CNNCT
+# Generate 50 structures from the trained generator:
+conda run -n ganph --no-capture-output python generate_structures.py \
+    --training-data ../real_data --output ../generated_data --n 50
+
+# Compute S-values (compare real vs generated):
+conda run -n ganph --no-capture-output python analyze.py \
+    --input ../real_data --compare ../generated_data --output s_values.csv
+
+# Topological validation:
+cd ../3_PH
+python 1_PD.py && python 2_PI.py && python 3_PCA.py
 ```
 
 ---

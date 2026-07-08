@@ -266,7 +266,7 @@ def compute_tortuosity(vol: np.ndarray, phase_val: int) -> float:
     try:
         solver = tau.Solver(binary)
         solver.solve()
-        return float(solver.tau)
+        return float(np.asarray(solver.tau).flat[0])
     except Exception as e:
         warnings.warn(f"taufactor failed for phase {phase_val}: {e}")
         return float("nan")
