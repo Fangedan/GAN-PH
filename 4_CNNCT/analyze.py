@@ -56,6 +56,14 @@ S_OK       = 0.85   # S ≥ 0.85 → highly similar, no feedback needed
 S_MARGINAL = 0.70   # 0.70 ≤ S < 0.85 → moderate difference
                     # S < 0.70 → significant difference, feedback required
 
+# Metrics reported as informational only — computed and shown but excluded from
+# pass/fail scoring (Prof. Jin scope decision, 2026-07).
+# tau_* were descoped because (a) tau_YSZ is intrinsically below MARGINAL even
+# real-vs-real (ceiling=0.658), (b) tau_Ni/Pore are inversely coupled through
+# softmax and cannot both reach MARGINAL simultaneously.
+# YSZ quality is now scored via conn_YSZ (percolation fraction).
+INFORMATIONAL_METRICS = {"tau_Ni", "tau_YSZ", "tau_Pore"}
+
 # ── 6-connectivity structure for scipy.ndimage.label ──────────────────────────
 
 def _6conn():
@@ -418,7 +426,12 @@ def compare_datasets(results_real: list, results_gen: list) -> dict:
     """
     Compute S-values for every metric between two result sets.
 
-    Returns a dict: {metric_name: {"s_value": float, "interpretation": str}}
+    Returns a dict: {metric_name: {"s_value": float, "interpretation": str,
+                                    "informational": bool}}
+
+    Metrics in INFORMATIONAL_METRICS are computed and included but flagged
+    informational=True — they are not pass/fail criteria (scope decision 2026-07).
+    YSZ quality is scored via conn_YSZ (percolation fraction), not tau_YSZ.
     """
     metrics = [
         "conn_Ni", "conn_YSZ", "conn_Pore",
@@ -434,32 +447,57 @@ def compare_datasets(results_real: list, results_gen: list) -> dict:
         elif s >= S_MARGINAL:
             return "MARGINAL — moderate difference"
         else:
-            return "FAIL — significant difference (feedback required)"
+            return "FAIL — significant difference"
 
     report = {}
     for m in metrics:
         real_vals = np.array([r[m] for r in results_real], dtype=float)
         gen_vals  = np.array([r[m] for r in results_gen],  dtype=float)
         s = s_value(real_vals, gen_vals)
-        report[m] = {"s_value": round(s, 4), "interpretation": interp(s)}
+        report[m] = {
+            "s_value":       round(s, 4),
+            "interpretation": interp(s),
+            "informational":  m in INFORMATIONAL_METRICS,
+        }
 
     return report
 
 
 def print_comparison_report(report: dict, label_a: str = "Real",
                              label_b: str = "Generated") -> None:
-    """Pretty-print the S-value comparison report."""
-    print(f"\n{'='*62}")
+    """Pretty-print the S-value comparison report.
+
+    Scored metrics are shown first with pass/fail flags.
+    Informational metrics (tau_*) are shown in a separate section — they are
+    computed and reported but excluded from pass/fail scoring (2026-07 scope
+    decision: tau descoped; YSZ scored via conn_YSZ percolation fraction).
+    """
+    scored = {m: v for m, v in report.items() if not v["informational"]}
+    info   = {m: v for m, v in report.items() if v["informational"]}
+
+    W = 66
+    print(f"\n{'='*W}")
     print(f" S-value Comparison: {label_a}  vs  {label_b}")
     print(f" (Yu et al. 2025 framework)")
-    print(f"{'='*62}")
+    print(f"{'='*W}")
+
     print(f" {'Metric':<22} {'S-value':>8}  {'Interpretation'}")
     print(f" {'-'*22} {'-'*8}  {'-'*34}")
-    for metric, v in report.items():
+    for metric, v in scored.items():
         s = v["s_value"]
-        flag = "✓" if s >= S_OK else ("~" if s >= S_MARGINAL else "✗")
-        print(f" {flag} {metric:<20} {s:>8.4f}  {v['interpretation']}")
-    print(f"{'='*62}\n")
+        flag = "+" if s >= S_OK else ("~" if s >= S_MARGINAL else "!")
+        print(f" [{flag}] {metric:<20} {s:>8.4f}  {v['interpretation']}")
+
+    if info:
+        print(f"\n --- Informational (tau metrics -- not scored, scope decision 2026-07) ---")
+        print(f"     YSZ quality: scored via conn_YSZ above, not tau_YSZ below.")
+        print(f" {'Metric':<22} {'S-value':>8}  {'Note'}")
+        print(f" {'-'*22} {'-'*8}  {'-'*34}")
+        for metric, v in info.items():
+            s = v["s_value"]
+            print(f" [i] {metric:<20} {s:>8.4f}  {v['interpretation']} (informational)")
+
+    print(f"{'='*W}\n")
 
 
 # ── CLI ───────────────────────────────────────────────────────────────────────

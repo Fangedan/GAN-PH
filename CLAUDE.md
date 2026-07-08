@@ -13,10 +13,19 @@ A **conditional WGAN-GP** that generates realistic 3-phase SOC electrode
 microstructures (64³ voxels, phases: Ni=255, YSZ=127, Pore=0) matching real
 FIB-SEM data. Quality is measured by **S-values** (Yu et al. 2025): a
 Kolmogorov-Smirnov-based score comparing the generated distribution to real
-structures on connectivity, TPB density, and tortuosity factor (τ). S ≥ 0.85
-= OK, 0.70–0.85 = MARGINAL, < 0.70 = FAIL.
+structures. S ≥ 0.85 = OK, 0.70–0.85 = MARGINAL, < 0.70 = FAIL.
 
-The project goal is a generator whose S-values are all ≥ 0.70 (ideally ≥ 0.85).
+**Scored criteria (pass/fail):** connectivity (conn_Ni, conn_YSZ, conn_Pore),
+TPB density (total_tpb, active_tpb, active_tpb_frac). YSZ quality is scored
+by conn_YSZ (percolation fraction), not tortuosity.
+
+**Informational only (not scored):** tau_Ni, tau_YSZ, tau_Pore — computed and
+reported by analyze.py but excluded from pass/fail. See SCOPE DECISION (2026-07)
+section below. Real-vs-real ceiling for tau_YSZ = 0.658 (intrinsically below
+MARGINAL — no generator can achieve OK on this metric with this dataset).
+
+The project goal is a generator whose **scored** S-values are all ≥ 0.70
+(ideally ≥ 0.85). Tau S-values are monitored but not success-gated.
 
 ---
 
