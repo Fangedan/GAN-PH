@@ -1,8 +1,9 @@
 # GAN-PH Project — Context for Claude
 
-> Updated after runs 0–14. All runs complete. No training currently in progress.
+> Updated after runs 0–14 + Prof. Jin scope decision (2026-07). All runs complete. No training currently in progress.
 > SSA differentiable loss permanently abandoned. tau_Ni/tau_Pore tradeoff is fundamental.
-> Best config: run5 (tpb-proxy, 50 epochs). Next steps require architectural changes.
+> Best config: run5 (tpb-proxy, 50 epochs).
+> **SCOPE CHANGE:** Tortuosity (all phases) is DESCOPED as a success criterion — see section below.
 
 ---
 
@@ -313,10 +314,33 @@ Fix requires: retraining estimator on probability maps, OR Gumbel-softmax /
 straight-through to get approximately-binary inputs while keeping gradients.
 Do NOT attempt again without one of those changes. (timing=9999, never fires)
 
-### Branch hygiene (for next session)
-- Decide what to merge to master (run5/tpb-proxy is cleanest working baseline)
-- Tag run5 checkpoint as best-known-good in git history
-- RESULTS.md is fully updated through run14 on run14-weighted-pore-tau branch
+### Branch hygiene
+- master carries run5 training config + full run0–14 documentation (resolved 2026-07)
+- Tag `best-known-good-run5` on master points to the post-merge commit
+- run5 weights (*.pth) are gitignored and live locally; run2 weights also intact locally (historical tau_Ni record)
+
+---
+
+## SCOPE DECISION (2026-07)
+
+**Prof. Jin (Week 5 meeting + written follow-up) confirmed tortuosity as a whole (all three phases: tau_Ni, tau_YSZ, tau_Pore) is NOT a critical success criterion for this project.**
+
+This is a **descope, not a solve**. 14 runs demonstrated the metric was fundamentally difficult to optimize; the decision reflects scientific priorities, not a claim that tau was achieved.
+
+### What changes
+- **tau_* S-values are now informational/diagnostic only.** They are still computed and reported, but excluded from pass/fail scoring. A reader seeing tau values in the output should treat them as monitoring data, not graded criteria.
+- **The distribution-matching retry for tau_Ni is DROPPED.** No further experiments aimed at improving tau S-values are planned.
+- **Pareto frontier axes are now: active TPB density vs phase connectivity/percolation.** The tau axes are removed from the success frontier.
+- **YSZ scoring moves from tau_YSZ to conn_YSZ (percolation fraction).** tau_YSZ was pinned at 0.459–0.484 FAIL across all 14 runs and is unchanged by the descope — it remains documented as a known-stuck metric.
+
+### What does NOT change (findings remain on record)
+- **run2's tau_Ni 0.818 M** (best Ni tortuosity) is a methods finding, not a scored victory — it demonstrates what the tau loss could achieve for one phase under the best conditions, but the metric is no longer success-gated.
+- **run13's tau_Pore 0.819 M** (best Pore tortuosity) is similarly a methods finding.
+- **The fundamental Ni/Pore softmax coupling** (documented runs 8–14) is a genuine architectural finding — improving Pore tau always trades off against Ni tau through the softmax sum-to-1 constraint. It remains documented even though neither metric is now success-gated.
+- **tau_YSZ stuck at 0.459–0.484 FAIL across all 14 runs** is still documented. Descoping it does not mean it was fixed.
+
+### Descope ≠ solved
+The tau metrics were descoped because they were not achievable with the current architecture and they are not the primary physical quantity Prof. Jin needs to assess. The underlying reason tau_YSZ, tau_Ni, and tau_Pore were hard — softmax coupling, non-local percolation topology, convergence dynamics — is unchanged and documented in RESULTS.md.
 
 ---
 
