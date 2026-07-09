@@ -138,6 +138,37 @@ your_data_folder/
 
 ---
 
+## Multiple datasets
+
+The pipeline now supports multiple electrode datasets through a YAML-driven config system in `configs/`. Each dataset gets its own YAML file defining phase names, BMP pixel values, voxel size, and source label map. The default (`anode_niysz`) is the Ni-YSZ-Pore anode — all existing scripts work unchanged when no `--dataset-config` flag is passed.
+
+### Available configs
+
+| Config name | Phases | Voxel size | Status |
+|-------------|--------|-----------|--------|
+| `anode_niysz` | Ni / YSZ / Pore | 0.10 µm | Active (all runs 0–14) |
+| `cathode_s1_supercrop` | LSCF / GDC / Pore | ~0.040 µm | S1 cathode — training source |
+| `cathode_s2` | — | — | **DESCOPED** (stub only, SCT extra layer) |
+
+### Adding a new dataset
+
+1. Copy `configs/anode_niysz.yaml` to `configs/<your_name>.yaml` and fill in phases, voxel size, and `source_file_key`.
+2. Add the absolute TIF path to `configs/local_paths.yaml` (gitignored, machine-specific).
+3. Run `0_PRV/extract_cubes.py --config <your_name> --size 64 --stride 64 --out <dir>` to extract 64³ cubes.
+4. Pass `--dataset-config <your_name>` to `analyze.py` when comparing structures.
+
+### Cathode cube extraction
+
+S1 (`Segmented_LSCF_GDC_Supercrop.tif`, 151×283×120 voxels) yields 6 non-overlapping or 24 overlapping 64³ crops. Val split is geometrically impossible at this volume size — z-preserving augmentation is required before training. See `CLAUDE.md → CATHODE DATASET` for full extraction details and open questions.
+
+```bash
+# Extract cubes from S1 Supercrop (run from repo root):
+conda run -n ganph --no-capture-output python 0_PRV/extract_cubes.py \
+    --config cathode_s1_supercrop --size 64 --stride 32 --out cathode_crops_str32
+```
+
+---
+
 ## Stage 0 — ParaView slice export (`0_PRV/`)
 
 Microstructure volumes from DREAM.3D arrive as `.vtk` files. The original workflow required manually slicing each volume into images through the ParaView GUI — a multi-step process repeated per structure. `0_PRV/paraview_slice_export.py` automates the entire workflow with ParaView's bundled `pvpython`.

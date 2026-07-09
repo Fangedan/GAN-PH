@@ -368,3 +368,100 @@ The tau metrics were descoped because they were not achievable with the current 
 - **SSA estimator is MONITORING-ONLY** (timing=9999). Do not enable as a loss
   without fixing: (a) estimator retrained on prob maps, (b) shape broadcast bug
   (need to squeeze pred or unsqueeze true so shapes are [3B] vs [3B]).
+
+---
+
+## CATHODE DATASET (2026-07)
+
+> Phase 1 of dataset generalisation: config system + cube extraction (branch feature/dataset-configs).
+> Commits: Task1 PPTX extraction, Task2 config system, Task3 cube extraction, Task4 de-hardcode,
+> Task5 docs. No training runs — extraction only.
+
+### Dataset identity
+
+LSCF+GDC+Pore 3-phase SOC **cathode** microstructure, analogous to the anode Ni-YSZ-Pore but for
+the cathode side. Source: Dr. Xinfang Jin's group (UTD), synchrotron XANES at Ce L-edge + Fe K-edge,
+FIB-milled pillar geometry. Voxel size ~40 nm (x/y measured from coordinates: x=0.04034 µm,
+y=0.04014 µm). Segmented TIF, phase labels {255: LSCF, 105: GDC, 0: Pore} after remapping.
+
+**Phase correspondence:**
+
+| Channel | Anode | Cathode (S1) | BMP value |
+|---------|-------|--------------|-----------|
+| 0 | Ni (electron_conductor) | LSCF (electron_conductor) | 255 |
+| 1 | YSZ (ion_conductor) | GDC (ion_conductor) | 127 |
+| 2 | Pore (gas) | Pore (gas) | 0 |
+
+### Specimens: S1 and S2
+
+Two specimens were analysed from the PPTX (NEW_DATASET_PPTX_NOTES.md); only S1 is used.
+
+- **S1 (Supercrop):** Pristine LSCF+GDC+Pore bilayer. File: `Segmented_LSCF_GDC_Supercrop.tif`,
+  shape (151, 283, 120), dtype uint8. Source labels: {255:LSCF, 105:GDC, 0:Pore}. Config:
+  `cathode_s1_supercrop` — the sole cathode training source.
+- **S2:** Pristine LSCF+GDC+SCT trilayer. **DESCOPED 2026-07 per Prof. Jin** — SCT is an extra
+  film layer not representative of the target cathode. Config stub `cathode_s2` retained for
+  label-map documentation only; do NOT pass to training pipeline.
+  - 4th phase SCT = SrCo₀.₉Ta₀.₁O₃-δ (mixed ionic-electronic conductor capping layer, MIEC).
+    Identified from PPTX slides 2 and 4.
+
+### Config system layout
+
+```
+configs/
+├── dataset_config.py          # loader: get_config(name) / default() → anode
+├── anode_niysz.yaml           # Ni-YSZ-Pore, voxel=0.1 µm, existing pipeline
+├── cathode_s1_supercrop.yaml  # LSCF-GDC-Pore, voxel ~40 nm, training source
+├── cathode_s2.yaml            # DESCOPED stub (label-map docs only)
+├── local_paths.yaml           # (gitignored) machine-specific TIF paths
+└── local_paths.yaml.example   # template for other machines
+```
+
+- `default()` returns `anode_niysz` — all existing scripts are byte-identical with no flag.
+- To switch: `python analyze.py --dataset-config cathode_s1_supercrop ...`
+- New datasets = new YAML file, no code changes (per Prof. Jin directive).
+
+### Cube extraction results (0_PRV/extract_cubes.py)
+
+Run on `Segmented_LSCF_GDC_Supercrop.tif` (151×283×120 voxels):
+
+| Config | stride | Accepted | Val | Notes |
+|--------|--------|----------|-----|-------|
+| S1 str64 | 64 | 6 | 0 | VF drift: GDC +3.7pp, Pore +4.5pp ⚠ |
+| S1 str32 | 32 | 24 | 0 | VF drift: LSCF +3.6pp, GDC −5.6pp ⚠ |
+| S2 str64/str32 | — | SKIPPED | — | S2 descoped |
+
+Val = 0 in all runs: geometric limitation — Supercrop too small for a val split on stride grid
+(longest axis Y=283 voxels; no stride-aligned start at or after y≥219 fits a 64-voxel crop).
+VF drift >2pp is expected from spatial inhomogeneity in a small volume. Augmentation
+(z-preserving rotations, same as `train_tau_net.py`) is essential before any training run.
+
+Output: `cathode_crops_str64/` and `cathode_crops_str32/` (gitignored). Each structure_XXXX/
+contains 64 × (64,64) uint8 BMP slices with values {0,127,255}; `results.dat` and `manifest.csv`.
+
+### Open questions for Prof. Jin (as of Phase 1)
+
+- **Anode voxel size**: CLAUDE.md notes 0.1 µm (100 nm) as undocumented — no source found. Flag.
+- **Cathode z voxel size**: PPTX blanks ("##um high cylinders" — unfilled). x=0.04034 µm,
+  y=0.04014 µm from image coordinates; z assumed equal but unverified. Empirical verification
+  planned via `0_PRV/check_voxel_isotropy.py` (Phase 2 Task 2).
+- **Metric policy for cathode**: which metrics are scored vs informational for cathode config
+  (anode scored = conn_* + tpb; cathode may differ). To be resolved with Prof. Jin.
+- **More cathode volumes**: S1 Supercrop yields only 6–24 crops — augmentation essential.
+  Additional volumes from the data provider would significantly improve training coverage.
+
+### tau-net and SSA surrogate validity
+
+The existing `tau_net.pth` and `2_CNN` SSA estimator were trained on **anode** data (Ni/YSZ/Pore).
+They are **NOT valid for cathode training**. Do not pass cathode structures to either surrogate
+without retraining on cathode data. The cathode GAN training loss will need new surrogate models
+or different auxiliary losses.
+
+### Gitignore additions (Phase 1)
+
+```
+configs/local_paths.yaml      # machine-specific TIF paths — never commit
+cathode_crops_*/              # extraction output dirs — gitignored like generated_data/
+new_dataset_slices.png        # inspection images from Phase 0 recon
+new_dataset_matbox.png
+```
