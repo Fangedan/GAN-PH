@@ -32,6 +32,7 @@ Phase pixel values (must match preprocess_dream3d.py):
 
 import argparse
 import csv
+import sys
 import warnings
 from pathlib import Path
 
@@ -40,15 +41,25 @@ import numpy as np
 from scipy.ndimage import label
 from scipy.stats import ks_2samp
 
-# ── Constants ──────────────────────────────────────────────────────────────────
+# ── Config-driven constants ────────────────────────────────────────────────────
+# Values are loaded from the anode_niysz config by default so that all scripts
+# that import analyze.py (compute_tau_labels, validate_taufactor, ceiling_calibration,
+# etc.) continue to work byte-identically with no --dataset-config flag.
+# Pass --dataset-config <name> on any CLI entry point to switch datasets.
 
-NI_VAL   = 255
-YSZ_VAL  = 127
-PORE_VAL = 0
-PHASES   = {"Ni": NI_VAL, "YSZ": YSZ_VAL, "Pore": PORE_VAL}
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from configs.dataset_config import get_config as _get_cfg, DatasetConfig
 
-VOXEL_SIZE_UM = 0.1        # 100 nm per voxel (standard for FIB-SEM Ni-YSZ)
-VOXEL_VOL_UM3 = VOXEL_SIZE_UM ** 3
+_ACTIVE_CFG: DatasetConfig = _get_cfg("anode_niysz")
+
+_ch      = _ACTIVE_CFG.channel_names()       # ["Ni","YSZ","Pore"] for anode
+NI_VAL   = _ACTIVE_CFG.phase_value(_ch[0])  # 255 — channel 0 (electron_conductor)
+YSZ_VAL  = _ACTIVE_CFG.phase_value(_ch[1])  # 127 — channel 1 (ion_conductor)
+PORE_VAL = _ACTIVE_CFG.phase_value(_ch[2])  # 0   — channel 2 (gas)
+PHASES   = _ACTIVE_CFG.phases_dict()         # {"Ni": 255, "YSZ": 127, "Pore": 0}
+
+VOXEL_SIZE_UM  = _ACTIVE_CFG.voxel_size_um  # 0.1 µm (100 nm, anode FIB-SEM)
+VOXEL_VOL_UM3  = VOXEL_SIZE_UM ** 3
 VOXEL_FACE_UM2 = VOXEL_SIZE_UM ** 2
 
 # Threshold for S-value interpretation (Yu et al. 2025)
@@ -63,6 +74,29 @@ S_MARGINAL = 0.70   # 0.70 ≤ S < 0.85 → moderate difference
 # softmax and cannot both reach MARGINAL simultaneously.
 # YSZ quality is now scored via conn_YSZ (percolation fraction).
 INFORMATIONAL_METRICS = {"tau_Ni", "tau_YSZ", "tau_Pore"}
+
+
+def _apply_config(cfg: DatasetConfig) -> None:
+    """Switch all module-level constants to a different dataset config.
+
+    Called from main() when --dataset-config is passed. Updates NI_VAL,
+    YSZ_VAL, PORE_VAL, PHASES, VOXEL_SIZE_UM and the derived area/volume
+    constants so all downstream functions see the new values.
+    """
+    g = globals()
+    _c = cfg.channel_names()
+    g["_ACTIVE_CFG"]    = cfg
+    g["NI_VAL"]         = cfg.phase_value(_c[0])
+    g["YSZ_VAL"]        = cfg.phase_value(_c[1])
+    g["PORE_VAL"]       = cfg.phase_value(_c[2])
+    g["PHASES"]         = cfg.phases_dict()
+    sz                  = cfg.voxel_size_um if cfg.voxel_size_um else 0.1
+    g["VOXEL_SIZE_UM"]  = sz
+    g["VOXEL_VOL_UM3"]  = sz ** 3
+    g["VOXEL_FACE_UM2"] = sz ** 2
+    # rebuild tau informational set with the new phase names
+    g["INFORMATIONAL_METRICS"] = {f"tau_{n}" for n in _c}
+
 
 # ── 6-connectivity structure for scipy.ndimage.label ──────────────────────────
 
@@ -528,13 +562,21 @@ Examples:
                         help="CSV output path (optional)")
     parser.add_argument("--no-tau", action="store_true",
                         help="Skip tortuosity calculation (faster)")
+    parser.add_argument("--dataset-config", default="anode_niysz",
+                        metavar="NAME",
+                        help="Dataset config name from configs/<NAME>.yaml "
+                             "(default: anode_niysz — anode Ni-YSZ-Pore pipeline)")
     args = parser.parse_args()
+
+    if args.dataset_config != "anode_niysz":
+        _apply_config(_get_cfg(args.dataset_config))
 
     input_path = Path(args.input)
     compute_tau = not args.no_tau
 
     print("=" * 62)
     print(" GAN-PH Connectivity & Transport Analysis")
+    print(f" Dataset config : {_ACTIVE_CFG.name}")
     print("=" * 62)
 
     # Single structure mode

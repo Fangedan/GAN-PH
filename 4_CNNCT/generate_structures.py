@@ -47,6 +47,7 @@ from sklearn import preprocessing
 # Works whether you run from 4_CNNCT/ or repo root
 _repo_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_repo_root / "1_GAN"))
+sys.path.insert(0, str(_repo_root))
 try:
     from models import Generator
 except ImportError as e:
@@ -54,13 +55,15 @@ except ImportError as e:
     print("Make sure you run this script from inside 4_CNNCT/ or the repo root.")
     sys.exit(1)
 
+from configs.dataset_config import default as _cfg_default
+
 # ── Constants ─────────────────────────────────────────────────────────────────
 
 LATENT_SIZE = 100    # must match main.py
 
 # Generator output: channel 0=Ni, 1=YSZ, 2=Pore  →  pixel values below
 # (matches load.py one-hot encoding and preprocess_dream3d.py phase values)
-PHASE_PIXEL = np.array([255, 127, 0], dtype=np.uint8)
+PHASE_PIXEL = _cfg_default().phase_pixel_array()   # [255, 127, 0] for anode
 
 
 # ── Conditioning ──────────────────────────────────────────────────────────────

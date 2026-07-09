@@ -49,20 +49,26 @@ Requirements:
 
 import os
 import argparse
+import sys
 import numpy as np
 import cv2
 from pathlib import Path
 from tqdm import tqdm
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from configs.dataset_config import default as _cfg_default
 
 # -- Configuration --------------------------------------------------------------
 VOXEL_SIZE    = 64      # output structure size (64x64x64)
-VOXEL_SIZE_UM = 0.1     # physical voxel size in micrometers (100 nm)
+
+_pp_cfg       = _cfg_default()
+_pp_ch        = _pp_cfg.channel_names()
+VOXEL_SIZE_UM = _pp_cfg.voxel_size_um or 0.1    # 0.1 µm (100 nm, anode FIB-SEM)
 
 # Phase pixel values in the OUTPUT (what load.py expects)
-NI_VAL   = 255
-YSZ_VAL  = 127
-PORE_VAL = 0
+NI_VAL   = _pp_cfg.phase_value(_pp_ch[0])   # 255
+YSZ_VAL  = _pp_cfg.phase_value(_pp_ch[1])   # 127
+PORE_VAL = _pp_cfg.phase_value(_pp_ch[2])   # 0
 
 # Phase pixel values in DREAM.3D's PNG output (what Juan sends)
 DREAM3D_NI_VAL   = 0    # Ni is black in DREAM.3D output
