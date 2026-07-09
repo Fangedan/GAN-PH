@@ -34,7 +34,9 @@ from torch import autograd
 
 class Trainer():
     def __init__(self, model_g, optim_g, model_c, optim_c, model_e, epochs, device, dataloader, in_header,
-                 tau_net=None, tau_targets=None):
+                 tau_net=None, tau_targets=None,
+                 no_tpb_proxy=False, no_ysz_density=False,
+                 save_every=1):
 
         self.generator  = model_g       # Generator
         self.opt_g      = optim_g       # Optimizer for Generator
@@ -56,6 +58,12 @@ class Trainer():
                 p.requires_grad_(False)
             tau_net.eval()
 
+        # Dataset-specific loss switches (default False = anode behavior unchanged)
+        self.no_tpb_proxy   = no_tpb_proxy    # --no-tpb-proxy: skip anode-calibrated TPB target
+        self.no_ysz_density = no_ysz_density   # --no-ysz-density: skip ch-1 density/face losses
+
+        self.save_epoch = save_every           # --save-every: checkpoint interval (default 1)
+
         self.losses = {
             "G_loss":            [],
             "D_loss":            [],
@@ -74,7 +82,6 @@ class Trainer():
         self.w_gp        = 20      # Weight for gradient penalty
         self.w_param     = 1000    # Weight for volume fraction and specific surface area
         self.n_critic    = 1       # Number of critic iterations per generator update
-        self.save_epoch  = 1       # Save model per epoch
         self.timing      = 9999    # Epoch at which SSA loss is added to G_loss
         self.latent_size = 100     # Latent noise vector size
 
@@ -682,25 +689,27 @@ class Trainer():
 
                     g_loss = -self.critic(g_data).mean()
 
-                    # All connectivity/proxy losses run from epoch 0.
+                    # Base G_loss: adversarial + VF + generic pore connectivity.
+                    # SSA enters only after self.timing (=9999, never); monitoring only.
                     if epoch >= self.timing:
-                        G_loss = (g_loss
-                                  + self.w_param         * (loss_vf + loss_ssa)
-                                  + self.w_conn          * loss_conn
-                                  + self.w_conn_ysz      * loss_conn_ysz
-                                  + self.w_conn_ysz_face * loss_conn_ysz_face
-                                  + self.w_tpb           * loss_tpb)
+                        G_loss = g_loss + self.w_param * (loss_vf + loss_ssa)
                     else:
-                        G_loss = (g_loss
-                                  + self.w_param         * loss_vf
-                                  + self.w_conn          * loss_conn
+                        G_loss = g_loss + self.w_param * loss_vf
+                    G_loss = G_loss + self.w_conn * loss_conn
+
+                    # YSZ density / face-hinge: anode-calibrated (ch-1 threshold 0.10/0.18).
+                    # Disabled via --no-ysz-density for non-anode datasets.
+                    if not self.no_ysz_density:
+                        G_loss = (G_loss
                                   + self.w_conn_ysz      * loss_conn_ysz
-                                  + self.w_conn_ysz_face * loss_conn_ysz_face
-                                  + self.w_tpb           * loss_tpb)
+                                  + self.w_conn_ysz_face * loss_conn_ysz_face)
+
+                    # Near-TPB proxy: anode-calibrated target=0.002.
+                    # Disabled via --no-tpb-proxy for non-anode datasets.
+                    if not self.no_tpb_proxy:
+                        G_loss = G_loss + self.w_tpb * loss_tpb
 
                     # τ loss: added after tau_timing epochs, only when tau_net loaded.
-                    # Delayed start lets the generator form recognizable structures
-                    # before the τ gradient is meaningful.
                     if self.tau_net is not None and epoch >= self.tau_timing:
                         loss_tau = self._loss_tortuosity(g_data)
                         G_loss   = G_loss + self.w_tau * loss_tau

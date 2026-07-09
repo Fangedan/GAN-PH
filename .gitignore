@@ -83,3 +83,9 @@ new_dataset_matbox.png
 configs/local_paths.yaml
 # ── Cathode crop output directories (gitignored like generated_data/) ──
 cathode_crops_*/
+# ── Cathode run generated structure directories ──
+generated_cathode_*/
+# ── Cathode run analysis outputs ──
+4_CNNCT/cathode_run0_memo.csv
+# ── Run-specific log files (untracked like run*_output.log) ──
+1_GAN/cathode_*.log

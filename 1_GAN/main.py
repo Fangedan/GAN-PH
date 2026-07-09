@@ -87,6 +87,20 @@ def parse_args():
         help="JSON produced by compute_tau_labels.py with mean τ per phase "
              "(5_TAU/tau_targets.json). Required when --tau-estimator is set.",
     )
+    p.add_argument(
+        "--save-every", type=int, default=1,
+        help="Save a Generator checkpoint every N epochs (default: 1 = every epoch).",
+    )
+    p.add_argument(
+        "--no-tpb-proxy", action="store_true", default=False,
+        help="Disable near-TPB density proxy loss (target=0.002 is anode-calibrated; "
+             "pass this flag for non-anode datasets).",
+    )
+    p.add_argument(
+        "--no-ysz-density", action="store_true", default=False,
+        help="Disable YSZ min-slice density and YSZ face-hinge losses "
+             "(thresholds 0.10/0.18 are anode-calibrated; pass for non-anode datasets).",
+    )
     return p.parse_args()
 
 
@@ -190,17 +204,20 @@ def main():
 
     # ---- Train ---- #
     trainer = training.Trainer(
-        model_g      = generator,
-        optim_g      = opt_g,
-        model_c      = critic,
-        optim_c      = opt_c,
-        model_e      = estimator,
-        epochs       = args.epochs,
-        device       = device,
-        dataloader   = train_loader,
-        in_header    = str(args.data),
-        tau_net      = tau_net,
-        tau_targets  = tau_targets,
+        model_g        = generator,
+        optim_g        = opt_g,
+        model_c        = critic,
+        optim_c        = opt_c,
+        model_e        = estimator,
+        epochs         = args.epochs,
+        device         = device,
+        dataloader     = train_loader,
+        in_header      = str(args.data),
+        tau_net        = tau_net,
+        tau_targets    = tau_targets,
+        no_tpb_proxy   = args.no_tpb_proxy,
+        no_ysz_density = args.no_ysz_density,
+        save_every     = args.save_every,
     )
     trainer.train()
 
