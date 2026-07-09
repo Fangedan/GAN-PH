@@ -580,8 +580,31 @@ OK on every scored metric. (N_ref=6 makes these ceilings noisy — treat as indi
 | τ loss | 50 | OFF (no `--tau-estimator`, cathode tau-net not trained) |
 | SSA (anode estimator) | 1000 | MONITORING ONLY (timing=9999) |
 
-### S-value results
+### S-value results (ep216 final, 50 structures, scored metrics)
 
-> Fill after pipeline completes. See `1_GAN/CATHODE_RUN0_REPORT.md`.
+| Metric | S-value | |
+|---|---|---|
+| conn_LSCF | 0.779 | MARGINAL |
+| conn_GDC | 0.870 | OK |
+| conn_Pore | 0.859 | OK |
+| total_tpb | 0.802 | MARGINAL |
+| active_tpb | 0.934 | OK |
+| active_tpb_frac | 0.852 | OK |
+| dpb_LSCF_GDC | 0.734 | MARGINAL |
+| dpb_LSCF_Pore | 0.859 | OK |
+| dpb_perc_LSCF_Pore | 0.786 | MARGINAL |
+| dpb_GDC_Pore | 0.817 | MARGINAL |
+
+**5 OK, 5 MARGINAL, 0 FAIL.** Strong baseline — no scored metric below 0.70 with zero cathode-specific
+auxiliary losses. Compare: anode run0 had tau_Ni=0.649 F, tau_YSZ=0.484 F with the same minimal setup.
+
+**Key findings:**
+- conn_LSCF (0.779 M) is the primary gap — oscillates, reached 0.901 OK at ep108 but degraded.
+- total_tpb (0.802 M) improving monotonically across epochs; a calibrated cathode tpb_proxy would push to OK.
+- conn_GDC (0.870 OK) is surprisingly well-matched — cathode GDC is more learnable than anode YSZ.
+- Memorization: gen mean 0.562 < baseline 0.593 → no memorization, generator generalizes.
+- Best checkpoint: ep108 (7 OK, 2 M, 1 F) vs ep216 (5 OK, 5 M, 0 F) — tradeoff documented in report.
+
+Full details in `1_GAN/CATHODE_RUN0_REPORT.md`.
 
 ---
