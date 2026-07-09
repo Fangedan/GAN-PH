@@ -1,73 +1,63 @@
 # configs/cathode_s2.yaml
 # =========================
-# Config for Sample 2 (pristine LSCF+GDC/SCT bilayer, 4-phase system).
-# Source: S2_GDC_LSCF_SCT_Rectangle.tif (cleaner 0-3 integer labels) or
-# S2_MATBOX.tif (5-label including val=5 background padding).
-# See NEW_DATASET_PPTX_NOTES.md for label identity confirmation.
+# ⚠️ DESCOPED 2026-07 per Prof. Jin -- DO NOT USE FOR TRAINING ⚠️
 #
-# ⚠️ WARNING: S2 has 4 phases (Pore, GDC, LSCF, SCT). The current GAN
-# architecture has a 3-channel softmax and CANNOT train on 4-phase data without
-# architectural changes (4-channel generator + critic). This config is included
-# for documentation and future use, NOT for immediate training.
+# Sample 2 (LSCF+GDC/SCT bilayer) is descoped as a training source.
+# Reason: SCT is an extra film layer not representative of the target cathode.
+# S1 (cathode_s1_supercrop.yaml) is the sole cathode training source.
 #
-# Phase roles:
-#   Pore: gas transport (same as anode)
-#   GDC: ionic conductor (analogous to YSZ)
-#   LSCF: mixed electronic-ionic conductor (analogous to Ni)
-#   SCT: capping MIEC layer (no anode analogue -- NEW phase)
+# This file is retained as a stub to preserve the label-map knowledge from
+# the inspection (NEW_DATASET_INSPECTION.md, NEW_DATASET_PPTX_NOTES.md).
+# Do NOT pass this config to extract_cubes.py or any training pipeline.
 #
-# Source: S2_GDC_LSCF_SCT_Rectangle.tif preferred over S2_MATBOX.tif
-# because it uses clean 0-3 integer labels without background padding.
-# S2_MATBOX.tif has val=5 background that must be excluded.
+# Label identities (from NEW_DATASET_PPTX_NOTES.md, PPTX slides 2 and 4):
+#   S2_GDC_LSCF_SCT_Rectangle.tif (274x215x166, labels 0-3):
+#     label=0: Pore  (53.0% of voxels)
+#     label=1: GDC   (29.3%)
+#     label=2: LSCF  (11.1%)
+#     label=3: SCT   ( 6.6%) -- SrCo0.9Ta0.1O3-d, MIEC capping layer
+#   S2_MATBOX.tif (304x229x227):
+#     val=5: Background padding (41.0%)
+#     val=0: Pore (21.4%)
+#     val=88: SCT (24.6%)  ← large SCT region in bilayer geometry
+#     val=171: GDC (8.3%)
+#     val=254: LSCF (4.7%)
 
 name: cathode_s2
+descoped: true
+descoped_reason: "Per Prof. Jin 2026-07: SCT extra film layer, not representative. S1 only."
 
-# Channel assignment for a hypothetical 4-channel GAN (currently unsupported).
-# If reduced to 3 phases (exclude SCT), use channels 0-2 and treat SCT as excluded.
-# Phase roles below follow the electrode hierarchy (GDC as ion conductor, LSCF as electron conductor).
-# NOTE: bmp_value here is the TARGET BMP value in a hypothetical 4-phase encoding.
-# For a 3-channel reduction: exclude SCT (add to exclude_values) and re-normalize.
+# Phase definitions retained for documentation (not for active use)
 phases:
   - channel: 0
     name: LSCF
-    bmp_value: 255          # target for 3-channel case (maps to electron_conductor)
+    bmp_value: 255
     role: electron_conductor
   - channel: 1
     name: GDC
-    bmp_value: 127          # target for 3-channel case (maps to ion_conductor)
+    bmp_value: 127
     role: ion_conductor
   - channel: 2
     name: Pore
     bmp_value: 0
     role: gas
 
-# Physical voxel size. S2 has similar imaging conditions to S1 but exact values
-# are unknown. Using S1 x/y as placeholder; z unknown.
 voxel_size_um:
-  x: 0.04034    # placeholder from S1 struct.txt; S2 may differ
-  y: 0.04014    # placeholder from S1 struct.txt; S2 may differ
-  z: null       # UNKNOWN -- same open question as S1
+  x: null
+  y: null
+  z: null
 
-# Source file (absolute path via local_paths.yaml -- gitignored)
 source_file_key: cathode_s2_sct_tif
-# S2_GDC_LSCF_SCT_Rectangle.tif: shape (274, 215, 166), dtype uint8, labels 0-3
 
-# Source label map from S2_GDC_LSCF_SCT_Rectangle.tif (0-3 integer labels)
-# Confirmed from PPTX slides 2 and 4 (NEW_DATASET_PPTX_NOTES.md):
 source_label_map:
-  0: Pore         # 53.0% of voxels
-  1: GDC          # 29.3% of voxels (largest solid phase -- consistent with GDC in bilayer)
-  2: LSCF         # 11.1% of voxels
-  3: SCT          # 6.6% of voxels (capping layer, thinner region)
+  0: Pore
+  1: GDC
+  2: LSCF
+  3: SCT      # excluded; 4th phase (capping layer)
 
-# Excluded values for 3-phase reduction: treat SCT (label=3) as excluded.
-# extract_cubes.py will reject any crop whose excluded fraction > --max-excluded-frac.
-# Background (label=5 in S2_MATBOX) is also excluded; not present in SCT_Rectangle.
-# NOTE: For S2_MATBOX as source, add: 5 (background padding)
 exclude_values:
-  - 3    # SCT -- excluded for 3-phase GAN compatibility
+  - 3         # SCT excluded
 
-# Reaction-site metric -- same PENDING status as S1
 metric_policy:
-  reaction_site: PENDING_PROF_JIN
+  reaction_site: DESCOPED
   tau_scored: false
