@@ -76,3 +76,6 @@ generated_data_*/
 5_TAU/save_model/
 5_TAU/tau_labels.csv
 5_TAU/__pycache__/
+# ── Dataset inspection outputs (derived from external data, not to be committed) ──
+new_dataset_slices.png
+new_dataset_matbox.png
