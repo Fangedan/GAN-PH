@@ -31,14 +31,15 @@ phases:
     bmp_value: 0
     role: gas
 
-# Physical voxel size from struct.txt coordinate columns (NEW_DATASET_INSPECTION.md).
-# x and y are non-cubic by ~0.5%. Z is UNKNOWN — not stated in PPTX (blanks).
-# ⚠️ OPEN QUESTION: z voxel size unconfirmed. Placeholder uses x value.
-# Using z: null triggers a warning in extract_cubes.py. Update when Prof. Jin confirms.
+# Physical voxel size from struct.txt coordinate columns.
+# x, y, z all from struct.txt z column (check_voxel_isotropy.py 2026-07).
+# Voxel is isotropic: x/y/z within 0.5% of each other.
+# Autocorrelation z/x≈0.80 is genuine microstructural anisotropy (FIB pillar geometry),
+# NOT a calibration error — confirmed by struct.txt direct measurement.
 voxel_size_um:
   x: 0.04034    # 40.34 nm from struct.txt x-step
   y: 0.04014    # 40.14 nm from struct.txt y-step
-  z: null       # UNKNOWN -- confirmed OPEN QUESTION (NEW_DATASET_PPTX_NOTES.md Q1)
+  z: 0.040267   # 40.27 nm from struct.txt z-step (resolved 2026-07)
 
 # Source file (absolute path via local_paths.yaml — gitignored)
 source_file_key: cathode_s1_supercrop_tif
