@@ -73,7 +73,15 @@ S_MARGINAL = 0.70   # 0.70 ≤ S < 0.85 → moderate difference
 # real-vs-real (ceiling=0.658), (b) tau_Ni/Pore are inversely coupled through
 # softmax and cannot both reach MARGINAL simultaneously.
 # YSZ quality is now scored via conn_YSZ (percolation fraction).
-INFORMATIONAL_METRICS = {"tau_Ni", "tau_YSZ", "tau_Pore"}
+INFORMATIONAL_METRICS = {
+    "tau_Ni", "tau_YSZ", "tau_Pore",
+    # DPB metrics are informational for the anode (Prof. Jin: not a primary anode criterion).
+    # For cathode config, dpb_informational=False removes them from this set.
+    "dpb_Ni_YSZ", "dpb_Ni_Pore", "dpb_YSZ_Pore",
+}
+
+# Runs the DPB–SSA self-check exactly once (first structure analyzed per session).
+_DPB_SSA_CHECKED: bool = False
 
 
 def _apply_config(cfg: DatasetConfig) -> None:
@@ -95,7 +103,14 @@ def _apply_config(cfg: DatasetConfig) -> None:
     g["VOXEL_VOL_UM3"]  = sz ** 3
     g["VOXEL_FACE_UM2"] = sz ** 2
     # rebuild tau informational set with the new phase names
-    g["INFORMATIONAL_METRICS"] = {f"tau_{n}" for n in _c}
+    info = {f"tau_{n}" for n in _c}
+    # DPB metrics: informational for anode, scored for cathode
+    if cfg.dpb_informational:
+        for i in range(len(_c)):
+            for j in range(i + 1, len(_c)):
+                info.add(f"dpb_{_c[i]}_{_c[j]}")
+                info.add(f"dpb_perc_{_c[i]}_{_c[j]}")
+    g["INFORMATIONAL_METRICS"] = info
 
 
 # ── 6-connectivity structure for scipy.ndimage.label ──────────────────────────
@@ -274,6 +289,122 @@ def compute_tpb_densities(vol: np.ndarray) -> tuple:
     return total_tpb, active_tpb, active_frac
 
 
+# ── Double-phase-boundary (DPB) interface densities ───────────────────────────
+
+def _count_interface_faces(vol: np.ndarray, val_a: int, val_b: int) -> int:
+    """
+    Count 6-adjacent faces between phase A and phase B in vol.
+
+    Convention: counts each face once, consistent with compute_surface_area in
+    preprocess_dream3d.py (np.diff + np.abs on the phase mask along each axis).
+    Identity that holds exactly (verified via _verify_dpb_ssa_consistency):
+        sum_B( face_count(A, B) ) == surface_faces_A   [from compute_surface_area]
+    """
+    count = 0
+    for ax in range(3):
+        lo = np.take(vol, range(vol.shape[ax] - 1), axis=ax)
+        hi = np.take(vol, range(1, vol.shape[ax]),  axis=ax)
+        count += int(np.sum(((lo == val_a) & (hi == val_b)) |
+                             ((lo == val_b) & (hi == val_a))))
+    return count
+
+
+def compute_dpb_densities(vol: np.ndarray) -> dict:
+    """
+    Double-phase-boundary (DPB) interface area densities (µm⁻¹, per total volume)
+    for all phase pairs defined by the active config.
+
+    Also computes percolation-weighted variants for pairs listed in
+    _ACTIVE_CFG.reaction_pairs — the interface area where BOTH phases
+    belong to z-percolating components (reusing _get_percolating_mask).
+
+    Returns
+    -------
+    dict with keys:
+        dpb_<A>_<B>        : float, µm⁻¹  (all interfaces between A and B)
+        dpb_perc_<A>_<B>   : float, µm⁻¹  (percolating subset; only for reaction_pairs)
+    """
+    phase_items = list(PHASES.items())    # [(name, val), ...] in channel order
+    total_vol_um3 = vol.size * VOXEL_VOL_UM3
+    result = {}
+
+    # Percolating masks — compute lazily only for phases that appear in reaction_pairs
+    rp = _ACTIVE_CFG.reaction_pairs       # e.g. [["LSCF", "Pore"]]
+    rp_names = {n for pair in rp for n in pair}
+    perc_cache: dict[str, np.ndarray] = {}
+
+    for i, (name_a, val_a) in enumerate(phase_items):
+        for j, (name_b, val_b) in enumerate(phase_items):
+            if j <= i:
+                continue
+            count = _count_interface_faces(vol, val_a, val_b)
+            key = f"dpb_{name_a}_{name_b}"
+            result[key] = float(count) * VOXEL_FACE_UM2 / total_vol_um3
+
+            # Percolation-weighted variant for reaction pairs
+            if name_a in rp_names and name_b in rp_names:
+                # Check if this pair (in either order) is a requested reaction pair
+                is_rp = any(
+                    (set(p) == {name_a, name_b})
+                    for p in rp
+                )
+                if is_rp:
+                    if name_a not in perc_cache:
+                        perc_cache[name_a] = _get_percolating_mask(vol, val_a)
+                    if name_b not in perc_cache:
+                        perc_cache[name_b] = _get_percolating_mask(vol, val_b)
+                    pa = perc_cache[name_a]
+                    pb = perc_cache[name_b]
+                    count_perc = 0
+                    for ax in range(3):
+                        lo_vol = np.take(vol, range(vol.shape[ax] - 1), axis=ax)
+                        hi_vol = np.take(vol, range(1, vol.shape[ax]),   axis=ax)
+                        lo_pa  = np.take(pa,  range(pa.shape[ax]  - 1), axis=ax)
+                        hi_pa  = np.take(pa,  range(1, pa.shape[ax]),   axis=ax)
+                        lo_pb  = np.take(pb,  range(pb.shape[ax]  - 1), axis=ax)
+                        hi_pb  = np.take(pb,  range(1, pb.shape[ax]),   axis=ax)
+                        count_perc += int(np.sum(
+                            ((lo_vol == val_a) & lo_pa & (hi_vol == val_b) & hi_pb) |
+                            ((lo_vol == val_b) & lo_pb & (hi_vol == val_a) & hi_pa)
+                        ))
+                    perc_key = f"dpb_perc_{name_a}_{name_b}"
+                    result[perc_key] = float(count_perc) * VOXEL_FACE_UM2 / total_vol_um3
+
+    return result
+
+
+def _verify_dpb_ssa_consistency(vol: np.ndarray, dpb: dict) -> None:
+    """
+    Self-check: verify sum_B( dpb_A_B ) == SSA_A × vf_A for each phase A.
+
+    Both sides have units µm⁻¹ (area per TOTAL volume).
+    Derivation:
+        SSA_A  [µm⁻¹ per phase vol]  = surface_faces_A × face_area / vol_A
+        dpb_A_B [µm⁻¹ per total vol] = face_AB × face_area / total_vol
+        vf_A = vol_A / total_vol
+        ∴  sum_B(dpb_A_B) = surface_faces_A × face_area / total_vol = SSA_A × vf_A
+
+    Prints one line per phase confirming or flagging discrepancy.
+    Uses the same face-counting approach as compute_surface_area (preprocess_dream3d).
+    """
+    phase_names = list(PHASES.keys())
+    total_vox = vol.size
+    for name_a, val_a in PHASES.items():
+        mask_a = (vol == val_a).astype(np.int8)
+        surface_faces_a = sum(int(np.sum(np.abs(np.diff(mask_a, axis=ax))))
+                              for ax in range(3))
+        # SSA_A × vf_A expressed per total volume — equals sum of DPB per total volume
+        ssa_times_vf = surface_faces_a * VOXEL_FACE_UM2 / (total_vox * VOXEL_VOL_UM3)
+        dpb_sum = sum(
+            dpb.get(f"dpb_{name_a}_{nb}", 0) + dpb.get(f"dpb_{nb}_{name_a}", 0)
+            for nb in phase_names if nb != name_a
+        )
+        delta = abs(dpb_sum - ssa_times_vf)
+        ok = "OK" if delta < 1e-12 else f"MISMATCH delta={delta:.3e}"
+        print(f"  DPB self-check {name_a}: sum(dpb)={dpb_sum:.6f}  "
+              f"SSA×vf={ssa_times_vf:.6f}  [{ok}]")
+
+
 # ── Tortuosity ────────────────────────────────────────────────────────────────
 
 def compute_tortuosity(vol: np.ndarray, phase_val: int) -> float:
@@ -327,11 +458,14 @@ def analyze_structure(vol: np.ndarray, compute_tau: bool = True) -> dict:
 
     Returns
     -------
-    dict with keys:
-        conn_Ni, conn_YSZ, conn_Pore          (float, connectivity fractions)
-        total_tpb, active_tpb, active_tpb_frac (float, µm⁻²)
-        tau_Ni, tau_YSZ, tau_Pore             (float, tortuosity factors)
+    dict with keys (names reflect active config's phase names):
+        conn_<P0>, conn_<P1>, conn_<P2>        (float, z-percolation fractions)
+        total_tpb, active_tpb, active_tpb_frac (float, µm⁻² / dimensionless)
+        dpb_<Pa>_<Pb>                           (float, µm⁻¹, all phase pairs)
+        dpb_perc_<Pa>_<Pb>                      (float, µm⁻¹, reaction_pairs only)
+        tau_<P0>, tau_<P1>, tau_<P2>            (float, tortuosity factor)
     """
+    global _DPB_SSA_CHECKED
     results = {}
 
     # Per-phase connectivity
@@ -344,7 +478,17 @@ def analyze_structure(vol: np.ndarray, compute_tau: bool = True) -> dict:
     results["active_tpb"]      = active_tpb
     results["active_tpb_frac"] = active_frac
 
-    # Tortuosity
+    # DPB interface densities
+    dpb = compute_dpb_densities(vol)
+    results.update(dpb)
+
+    # One-per-session self-check: verify sum(dpb_A_B) == SSA_A × vf_A
+    if not _DPB_SSA_CHECKED:
+        _DPB_SSA_CHECKED = True
+        print("  [DPB self-check — runs once per session]")
+        _verify_dpb_ssa_consistency(vol, dpb)
+
+    # Tortuosity (informational; descoped 2026-07)
     if compute_tau:
         for name, val in PHASES.items():
             results[f"tau_{name}"] = compute_tortuosity(vol, val)
@@ -367,6 +511,7 @@ def analyze_dataset(data_dir: Path, compute_tau: bool = True,
     """
     struct_dirs = find_structure_dirs(data_dir)
     all_results = []
+    _names = list(PHASES.keys())   # phase names in channel order
 
     for sd in struct_dirs:
         if verbose:
@@ -376,12 +521,10 @@ def analyze_dataset(data_dir: Path, compute_tau: bool = True,
         r["name"] = sd.name
         all_results.append(r)
         if verbose:
-            print(
-                f" conn_Ni={r['conn_Ni']:.3f}  "
-                f"conn_YSZ={r['conn_YSZ']:.3f}  "
-                f"conn_Pore={r['conn_Pore']:.3f}  "
-                f"active_tpb={r['active_tpb']:.3f} µm⁻²"
+            conn_str = "  ".join(
+                f"conn_{n}={r[f'conn_{n}']:.3f}" for n in _names
             )
+            print(f" {conn_str}  active_tpb={r['active_tpb']:.3f} µm⁻²")
 
     return all_results
 
@@ -463,15 +606,16 @@ def compare_datasets(results_real: list, results_gen: list) -> dict:
     Returns a dict: {metric_name: {"s_value": float, "interpretation": str,
                                     "informational": bool}}
 
-    Metrics in INFORMATIONAL_METRICS are computed and included but flagged
-    informational=True — they are not pass/fail criteria (scope decision 2026-07).
-    YSZ quality is scored via conn_YSZ (percolation fraction), not tau_YSZ.
+    The metrics list is derived dynamically from the result dicts so that
+    dpb_* and conn_<phase> metrics work generically for any active config.
+    Metrics in INFORMATIONAL_METRICS are flagged informational=True (not scored).
     """
-    metrics = [
-        "conn_Ni", "conn_YSZ", "conn_Pore",
-        "total_tpb", "active_tpb", "active_tpb_frac",
-        "tau_Ni", "tau_YSZ", "tau_Pore",
-    ]
+    # Build metric list from result keys, preserving insertion order.
+    # Exclude 'name'; skip any metric missing from either set (graceful degradation).
+    all_keys = [k for k in results_real[0] if k != "name"]
+    metrics = [m for m in all_keys
+               if all(m in r for r in results_real)
+               and all(m in r for r in results_gen)]
 
     def interp(s):
         if np.isnan(s):
@@ -523,8 +667,7 @@ def print_comparison_report(report: dict, label_a: str = "Real",
         print(f" [{flag}] {metric:<20} {s:>8.4f}  {v['interpretation']}")
 
     if info:
-        print(f"\n --- Informational (tau metrics -- not scored, scope decision 2026-07) ---")
-        print(f"     YSZ quality: scored via conn_YSZ above, not tau_YSZ below.")
+        print(f"\n --- Informational (not scored: tau descoped 2026-07; dpb informational for anode) ---")
         print(f" {'Metric':<22} {'S-value':>8}  {'Note'}")
         print(f" {'-'*22} {'-'*8}  {'-'*34}")
         for metric, v in info.items():
@@ -595,8 +738,16 @@ Examples:
         print(f"  Active fraction    : {r['active_tpb_frac']:.4f} "
               f"({r['active_tpb_frac']*100:.1f}%)")
 
+        dpb_keys = [k for k in r if k.startswith("dpb_")]
+        if dpb_keys:
+            scored_flag = "" if _ACTIVE_CFG.dpb_informational else " [scored]"
+            print(f"\n── Double-Phase Boundary (DPB){scored_flag} ──")
+            for k in dpb_keys:
+                info_tag = " [informational]" if _ACTIVE_CFG.dpb_informational else ""
+                print(f"  {k:<28}: {r[k]:.4f} µm⁻¹{info_tag}")
+
         if compute_tau:
-            print(f"\n── Tortuosity Factor ──")
+            print(f"\n── Tortuosity Factor (informational) ──")
             for name in PHASES:
                 tau = r[f"tau_{name}"]
                 s = f"{tau:.4f}" if not np.isnan(tau) else "N/A (non-percolating)"

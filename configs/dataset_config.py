@@ -79,6 +79,16 @@ class DatasetConfig:
     def metric_policy(self) -> dict:
         return self._d.get("metric_policy", {})
 
+    @property
+    def dpb_informational(self) -> bool:
+        """True when DPB interface metrics should be informational (not scored)."""
+        return bool(self._d.get("metric_policy", {}).get("dpb_informational", True))
+
+    @property
+    def reaction_pairs(self) -> list:
+        """Phase name pairs for percolation-weighted DPB, e.g. [['LSCF','Pore']]."""
+        return self._d.get("metric_policy", {}).get("reaction_pairs", [])
+
     # ── Phase accessors ───────────────────────────────────────────────────────
 
     def phase_value(self, phase_name: str) -> int:

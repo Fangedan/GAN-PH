@@ -47,6 +47,8 @@ source_label_map: identity
 metric_policy:
   reaction_site: tpb                # triple-phase boundary (standard for anode)
   tau_scored: false                 # descoped 2026-07 (Prof. Jin decision)
+  dpb_informational: true           # DPB metrics computed but not scored for anode
+  reaction_pairs: []                # no percolation-weighted DPB pair for anode
 
 # No excluded values (all voxels are one of the three phases)
 exclude_values: []

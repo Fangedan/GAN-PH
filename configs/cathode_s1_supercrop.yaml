@@ -51,12 +51,15 @@ source_label_map:
   105: GDC    # source GDC=105 → maps to channel 1 → BMP 127
   0: Pore     # source Pore=0 → maps to channel 2 → BMP 0 (identity)
 
-# Reaction-site metric — PENDING Prof. Jin confirmation.
-# For a MIEC cathode, reactions are distributed along LSCF-Pore interface,
-# not only at 3-phase boundary. TPB is a proxy; Prof. Jin to confirm.
+# Reaction-site metric — per Prof. Jin 2026-07 directive (Phase 2):
+# Track ALL boundary types: total TPB, active TPB, AND DPB interface areas.
+# Oxygen reacts at both TPB and two-phase interfaces in this MIEC cathode system.
 metric_policy:
-  reaction_site: PENDING_PROF_JIN   # likely surface_area or tpb; ask first
+  reaction_site: tpb_and_dpb        # both TPB and double-phase-boundary scored
   tau_scored: false
+  dpb_informational: false          # DPB metrics ARE scored for cathode (Prof. Jin 2026-07)
+  reaction_pairs:
+    - [LSCF, Pore]                  # electrochemically active LSCF-Pore interface
 
 # No excluded values (S1 has no background padding or 4th phase)
 exclude_values: []
