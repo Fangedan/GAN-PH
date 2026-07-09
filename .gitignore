@@ -79,3 +79,7 @@ generated_data_*/
 # ── Dataset inspection outputs (derived from external data, not to be committed) ──
 new_dataset_slices.png
 new_dataset_matbox.png
+# ── Multi-dataset config: local paths (machine-specific, never commit) ──
+configs/local_paths.yaml
+# ── Cathode crop output directories (gitignored like generated_data/) ──
+cathode_crops_*/

@@ -1,0 +1,13 @@
+# configs/local_paths.yaml.example
+# ==================================
+# Template for local_paths.yaml (which is gitignored).
+# Copy this file to configs/local_paths.yaml and fill in absolute paths
+# for your machine. Never commit local_paths.yaml.
+
+# Key: source_file_key in the dataset YAML
+# Value: absolute path to the source TIF on this machine
+
+cathode_s1_supercrop_tif: "C:/Users/YOURNAME/Downloads/UTD Summer 26 Internship/raw images backup/Segmented_LSCF_GDC_Supercrop.tif"
+cathode_s2_sct_tif: "C:/Users/YOURNAME/Downloads/UTD Summer 26 Internship/raw images backup/S2_GDC_LSCF_SCT_Rectangle.tif"
+cathode_s1_matbox_tif: "C:/Users/YOURNAME/Downloads/UTD Summer 26 Internship/raw images backup/S1_MATBOX.tif"
+cathode_s2_matbox_tif: "C:/Users/YOURNAME/Downloads/UTD Summer 26 Internship/raw images backup/S2_MATBOX.tif"

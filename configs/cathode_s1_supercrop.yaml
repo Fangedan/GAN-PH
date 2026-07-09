@@ -1,0 +1,62 @@
+# configs/cathode_s1_supercrop.yaml
+# ===================================
+# Config for Sample 1 (pristine LSCF+GDC bilayer, no SCT capping layer).
+# Source: Segmented_LSCF_GDC_Supercrop.tif from the UTD Summer 2026 Internship
+# dataset. Imaging: FIB-milled pillars + synchrotron XANES (Ce L-edge + Fe K-edge).
+#
+# Phase analogy (cathode vs. anode):
+#   LSCF (electronic conductor) ↔ Ni
+#   GDC  (ionic conductor)      ↔ YSZ
+#   Pore (gas transport)        ↔ Pore
+#
+# Only 3 phases — direct architectural analogue to the anode GAN.
+# S1 is preferred for initial cathode generalization (see NEW_DATASET_PPTX_NOTES.md).
+
+name: cathode_s1_supercrop
+
+# BMP target convention: remap to Ni=255, YSZ=127, Pore=0 so the existing
+# GAN pipeline (load.py, analyze.py) works without further changes.
+# Source file has LSCF=255 (already correct), GDC=105 (must remap to 127), Pore=0.
+phases:
+  - channel: 0
+    name: LSCF
+    bmp_value: 255          # target BMP value (matches Ni channel)
+    role: electron_conductor
+  - channel: 1
+    name: GDC
+    bmp_value: 127          # target BMP value (matches YSZ channel); source has 105
+    role: ion_conductor
+  - channel: 2
+    name: Pore
+    bmp_value: 0
+    role: gas
+
+# Physical voxel size from struct.txt coordinate columns (NEW_DATASET_INSPECTION.md).
+# x and y are non-cubic by ~0.5%. Z is UNKNOWN — not stated in PPTX (blanks).
+# ⚠️ OPEN QUESTION: z voxel size unconfirmed. Placeholder uses x value.
+# Using z: null triggers a warning in extract_cubes.py. Update when Prof. Jin confirms.
+voxel_size_um:
+  x: 0.04034    # 40.34 nm from struct.txt x-step
+  y: 0.04014    # 40.14 nm from struct.txt y-step
+  z: null       # UNKNOWN -- confirmed OPEN QUESTION (NEW_DATASET_PPTX_NOTES.md Q1)
+
+# Source file (absolute path via local_paths.yaml — gitignored)
+source_file_key: cathode_s1_supercrop_tif
+# Segmented_LSCF_GDC_Supercrop.tif: shape (151, 283, 120), dtype uint8
+# TIF axis order: (Z, Y, X) — confirmed by tifffile.asarray() shape match
+
+# Remap from source pixel values to BMP convention
+source_label_map:
+  255: LSCF   # source LSCF=255 → maps to channel 0 → BMP 255 (identity)
+  105: GDC    # source GDC=105 → maps to channel 1 → BMP 127
+  0: Pore     # source Pore=0 → maps to channel 2 → BMP 0 (identity)
+
+# Reaction-site metric — PENDING Prof. Jin confirmation.
+# For a MIEC cathode, reactions are distributed along LSCF-Pore interface,
+# not only at 3-phase boundary. TPB is a proxy; Prof. Jin to confirm.
+metric_policy:
+  reaction_site: PENDING_PROF_JIN   # likely surface_area or tpb; ask first
+  tau_scored: false
+
+# No excluded values (S1 has no background padding or 4th phase)
+exclude_values: []

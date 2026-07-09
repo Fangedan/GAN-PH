@@ -1,0 +1,52 @@
+# configs/anode_niysz.yaml
+# =========================
+# Reference config for the EXISTING Ni-YSZ-Pore FIB-SEM anode dataset.
+# This is the default config. All scripts behave byte-identically to the
+# pre-config codebase when this config is active (or when no config is passed).
+#
+# Voxel size source: preprocess_dream3d.py and analyze.py both hardcode 0.1 um
+# (100 nm). The comment says "standard for FIB-SEM Ni-YSZ" but no explicit
+# citation is present in the codebase or the results.dat provenance.
+# ⚠️ FLAG: voxel size is undocumented — confirm with Prof. Jin (open question 4
+# in NEW_DATASET_PPTX_NOTES.md).
+
+name: anode_niysz
+
+# Channel order MUST match softmax channels [0,1,2] in the GAN (models.py).
+# generator output: ch0=Ni, ch1=YSZ, ch2=Pore  (confirmed in generate_structures.py PHASE_PIXEL)
+# load.py one-hot: ch0=255, ch1=127, ch2=0       (confirmed in 1_GAN/load.py lines 56-63)
+phases:
+  - channel: 0
+    name: Ni
+    bmp_value: 255
+    role: electron_conductor
+  - channel: 1
+    name: YSZ
+    bmp_value: 127
+    role: ion_conductor
+  - channel: 2
+    name: Pore
+    bmp_value: 0
+    role: gas
+
+# Physical voxel size (micrometers).
+# ⚠️ UNDOCUMENTED: 0.1 um = 100 nm was hardcoded as "standard for FIB-SEM Ni-YSZ"
+# in both preprocess_dream3d.py (line 60) and analyze.py (line 50).
+# No explicit citation. Must be confirmed with Prof. Jin.
+voxel_size_um:
+  x: 0.1   # 100 nm -- assumed isotropic (no evidence otherwise)
+  y: 0.1
+  z: 0.1
+
+# Source label map: data is ALREADY in BMP convention (Ni=255, YSZ=127, Pore=0).
+# preprocess_dream3d.py handles the DREAM.3D inversion (0->255, 255->0, 127->127)
+# before saving. The real_data/ folder is already in BMP convention.
+source_label_map: identity
+
+# Reaction-site metric for scoring
+metric_policy:
+  reaction_site: tpb                # triple-phase boundary (standard for anode)
+  tau_scored: false                 # descoped 2026-07 (Prof. Jin decision)
+
+# No excluded values (all voxels are one of the three phases)
+exclude_values: []
