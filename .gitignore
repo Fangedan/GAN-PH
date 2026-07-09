@@ -87,5 +87,12 @@ cathode_crops_*/
 generated_cathode_*/
 # ── Cathode run analysis outputs ──
 4_CNNCT/cathode_run0_memo.csv
+4_CNNCT/cathode_s1_*_metrics.csv
+4_CNNCT/s_values_cathode_*.csv
 # ── Run-specific log files (untracked like run*_output.log) ──
 1_GAN/cathode_*.log
+# ── Root-level artifacts when training is run from repo root (not 1_GAN/) ──
+save_model/
+Process_Images/
+log.dat
+pipeline.log

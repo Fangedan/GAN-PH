@@ -30,6 +30,10 @@ $EPOCHS       = 216
 $SAVE_EVERY   = 54
 $CKPTS        = @(54, 108, 162)            # intermediate checkpoints
 $FINAL_EP     = 216
+# NOTE: training.py saves checkpoints to ./save_model/ relative to CWD (repo root when
+# run as "python 1_GAN/main.py"). generate_structures.py's default --epoch flag looks in
+# 1_GAN/save_model/. We override with --weights to point to the correct repo-root path.
+$CKPT_DIR     = "save_model"              # where training writes (repo root ./save_model/)
 
 Log "==================================================================="
 Log "  cathode-run0: WGAN-GP on S1 Supercrop (LSCF/GDC/Pore, 64^3)"
@@ -51,11 +55,13 @@ Log "PHASE 1 done."
 
 # ── PHASE 2: Generate from intermediate checkpoints (20 each, no-tau for speed)
 foreach ($ep in $CKPTS) {
-    $OUT = "generated_cathode_run0_ep${ep}"
-    Log "PHASE 2: Generate 20 structures @ epoch $ep -> $OUT ..."
+    $EP_STR  = "{0:D3}" -f $ep
+    $WTS     = "$CKPT_DIR\Generator_${EP_STR}epoch.pth"
+    $OUT     = "generated_cathode_run0_ep${ep}"
+    Log "PHASE 2: Generate 20 structures @ epoch $ep ($WTS) -> $OUT ..."
     conda run -n ganph --no-capture-output python -u 4_CNNCT/generate_structures.py `
         --training-data $TRAIN_DATA `
-        --epoch $ep `
+        --weights $WTS `
         --output $OUT `
         --n 20 2>&1 | Tee-Object -FilePath $LOG -Append
     Log "PHASE 2 ep${ep}: S-value analysis (no-tau) ..."
@@ -68,11 +74,13 @@ foreach ($ep in $CKPTS) {
 }
 
 # ── PHASE 3: Generate 50 from final checkpoint ────────────────────────────────
-$OUT_FINAL = "generated_cathode_run0_final"
-Log "PHASE 3: Generate 50 structures @ epoch $FINAL_EP -> $OUT_FINAL ..."
+$FINAL_EP_STR = "{0:D3}" -f $FINAL_EP
+$FINAL_WTS    = "$CKPT_DIR\Generator_${FINAL_EP_STR}epoch.pth"
+$OUT_FINAL    = "generated_cathode_run0_final"
+Log "PHASE 3: Generate 50 structures @ epoch $FINAL_EP ($FINAL_WTS) -> $OUT_FINAL ..."
 conda run -n ganph --no-capture-output python -u 4_CNNCT/generate_structures.py `
     --training-data $TRAIN_DATA `
-    --epoch $FINAL_EP `
+    --weights $FINAL_WTS `
     --output $OUT_FINAL `
     --n 50 2>&1 | Tee-Object -FilePath $LOG -Append
 

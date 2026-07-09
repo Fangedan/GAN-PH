@@ -487,3 +487,101 @@ cathode_crops_*/              # extraction output dirs — gitignored like gener
 new_dataset_slices.png        # inspection images from Phase 0 recon
 new_dataset_matbox.png
 ```
+
+---
+
+## CATHODE CALIBRATION (2026-07, pre-run0)
+
+> Run by `4_CNNCT/cathode_calibration.py` on the S1 Supercrop crops before any GAN training.
+> Establishes baseline metric distributions and real-vs-real S-value ceilings.
+> Raw CSVs: `4_CNNCT/cathode_s1_str32_metrics.csv` and `cathode_s1_str64_metrics.csv` (gitignored).
+
+### Metric distributions (str32 training crops, N=24)
+
+| Metric | Mean | Std | Min | Max |
+|---|---|---|---|---|
+| vf_LSCF | 0.207 | 0.098 | 0.072 | 0.490 |
+| vf_GDC | 0.156 | 0.050 | 0.099 | 0.309 |
+| vf_Pore | 0.637 | 0.102 | 0.411 | 0.795 |
+| conn_LSCF | 0.320 | 0.356 | 0.000 | 0.979 |
+| conn_GDC | 0.267 | 0.354 | 0.000 | 0.853 |
+| conn_Pore | 0.999 | 0.000 | 0.998 | 1.000 |
+| total_tpb (µm⁻²) | 0.481 | 0.085 | 0.313 | 0.660 |
+| active_tpb (µm⁻²) | 0.024 | 0.061 | 0.000 | 0.239 |
+| active_tpb_frac | 0.043 | 0.110 | 0.000 | 0.408 |
+| dpb_LSCF_GDC (µm⁻¹) | 0.387 | 0.079 | 0.206 | 0.577 |
+| dpb_LSCF_Pore (µm⁻¹) | 2.547 | 0.496 | 1.473 | 3.246 |
+| dpb_GDC_Pore (µm⁻¹) | 1.806 | 0.335 | 1.276 | 2.489 |
+| dpb_perc_LSCF_Pore (µm⁻¹) | 0.746 | 0.893 | 0.000 | 2.525 |
+
+**Key findings:**
+- conn_LSCF and conn_GDC are HIGHLY variable (std ≈ mean) and often 0 in individual crops.
+  This is an intrinsic property of the small S1 Supercrop — spatial inhomogeneity means
+  some 64³ sub-volumes are LSCF-dominant, others GDC-dominant.
+- active_tpb_frac mean=0.043 (4.3%) is very low because conn_LSCF and conn_GDC are often 0.
+  Active TPB requires ALL THREE phases to percolate simultaneously.
+- Pore connectivity is essentially perfect (0.999) — the generic pore connectivity loss
+  (`w_conn=50`) should be sufficient to reproduce this in the generator.
+
+### Real-vs-real S-value ceiling (str32 as "generated", str64 as reference, N_ref=6)
+
+| Metric | Ceiling S-value | Interpretation |
+|---|---|---|
+| conn_LSCF | 0.927 | OK |
+| conn_GDC | 0.861 | OK |
+| conn_Pore | 0.903 | OK |
+| total_tpb | 0.907 | OK |
+| active_tpb | 0.893 | OK |
+| active_tpb_frac | 0.887 | OK |
+| dpb_LSCF_GDC | 0.898 | OK |
+| dpb_LSCF_Pore | 0.855 | OK |
+| dpb_perc_LSCF_Pore | 0.910 | OK |
+| dpb_GDC_Pore | 0.920 | OK |
+
+**ALL scored metrics have ceiling ≥ 0.855 (OK).** Unlike the anode where tau_YSZ was
+intrinsically stuck at 0.658 (real-vs-real, below MARGINAL), no cathode metric is
+fundamentally limited by the dataset. A well-trained generator can in principle achieve
+OK on every scored metric. (N_ref=6 makes these ceilings noisy — treat as indicative.)
+
+### Calibration targets for future cathode loss terms
+
+- **TPB proxy target (cathode run1+):** The anode target 0.002 (dimensionless probability
+  product) was calibrated on anode VFs (~35/30/35 LSCF/GDC/Pore). Cathode VFs are very
+  different (21/16/64). Do NOT reuse 0.002. The cathode tpb_proxy target must be
+  calibrated empirically by running the proxy on real cathode structures passed through
+  the generator's preprocessing. TBD after run0.
+- **DPB loss targets (if added):** dpb_LSCF_Pore=2.547 µm⁻¹, dpb_GDC_Pore=1.806 µm⁻¹.
+  These are the mean cathode values to target (not yet implemented as loss terms).
+- **GDC connectivity loss (analogous to anode YSZ):** conn_GDC mean=0.267 in training crops.
+  If the generator collapses GDC connectivity, a min-slice density loss (similar to anode's
+  w_conn_ysz) may be needed. Threshold calibration: GDC mean z-slice density = vf_GDC ≈
+  0.156; threshold should be ~0.08–0.10 (similar proportion as anode's 0.10 out of ~0.30).
+
+---
+
+## CATHODE RUN0 (2026-07, branch feature/cathode-run0)
+
+> First GAN training run on S1 Supercrop cathode data. Baseline — no cathode-specific losses.
+> G_loss = WGAN-GP + 1000×vf + 50×conn(pore). Tau, TPB proxy, YSZ-density all OFF.
+> 216 epochs, 6 batches/epoch, checkpoints at 54/108/162/216. ~1296 G-steps.
+> Pipeline: `cathode_run0_pipeline.ps1`. Report: `1_GAN/CATHODE_RUN0_REPORT.md`.
+> Status: **TRAINING IN PROGRESS** (launched 2026-07-09 14:30, expected done ~16:10).
+
+### Loss configuration
+
+| Term | Weight | Status |
+|---|---|---|
+| WGAN critic | — | ON |
+| VF loss | 1000 | ON |
+| Pore connectivity (generic) | 50 | ON |
+| YSZ/GDC min-slice density | 200 | OFF (`--no-ysz-density`) |
+| YSZ/GDC face-hinge | 200 | OFF (`--no-ysz-density`) |
+| Near-TPB proxy | 1000 | OFF (`--no-tpb-proxy`) |
+| τ loss | 50 | OFF (no `--tau-estimator`, cathode tau-net not trained) |
+| SSA (anode estimator) | 1000 | MONITORING ONLY (timing=9999) |
+
+### S-value results
+
+> Fill after pipeline completes. See `1_GAN/CATHODE_RUN0_REPORT.md`.
+
+---
