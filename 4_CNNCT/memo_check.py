@@ -111,6 +111,11 @@ def memo_check(train_dir: Path, gen_dir: Path, output_csv: Path) -> None:
     train_names = sorted(train_vols.keys())
     gen_names   = sorted(gen_vols.keys())
 
+    if len(gen_vols) == 0:
+        print("  ERROR: no generated structures found in", gen_dir)
+        print("  Skipping gen→train check — run generation first.")
+        return
+
     # ── Generated → nearest training crop ─────────────────────────────────
     print("  [1/2] Generated → nearest train agreement (16 symmetries each) ...")
     gen_rows = []

@@ -44,6 +44,7 @@ conda run -n ganph --no-capture-output python -u 1_GAN/main.py `
     --epochs      $EPOCHS `
     --lr          0.00005 `
     --save-every  $SAVE_EVERY `
+    --estimator   "2_CNN/save_model/model_200epoch.pth" `
     --no-tpb-proxy `
     --no-ysz-density 2>&1 | Tee-Object -FilePath $LOG -Append
 Log "PHASE 1 done."
