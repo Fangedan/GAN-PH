@@ -439,16 +439,38 @@ VF drift >2pp is expected from spatial inhomogeneity in a small volume. Augmenta
 Output: `cathode_crops_str64/` and `cathode_crops_str32/` (gitignored). Each structure_XXXX/
 contains 64 × (64,64) uint8 BMP slices with values {0,127,255}; `results.dat` and `manifest.csv`.
 
-### Open questions for Prof. Jin (as of Phase 1)
+### Prof. Jin directives — Phase 2 answers (2026-07)
 
-- **Anode voxel size**: CLAUDE.md notes 0.1 µm (100 nm) as undocumented — no source found. Flag.
-- **Cathode z voxel size**: PPTX blanks ("##um high cylinders" — unfilled). x=0.04034 µm,
-  y=0.04014 µm from image coordinates; z assumed equal but unverified. Empirical verification
-  planned via `0_PRV/check_voxel_isotropy.py` (Phase 2 Task 2).
-- **Metric policy for cathode**: which metrics are scored vs informational for cathode config
-  (anode scored = conn_* + tpb; cathode may differ). To be resolved with Prof. Jin.
-- **More cathode volumes**: S1 Supercrop yields only 6–24 crops — augmentation essential.
-  Additional volumes from the data provider would significantly improve training coverage.
+**(a) S2 descoped:** S2 is fully descoped (extra SCT film layer, not representative of
+target cathode). S1 Supercrop is the sole cathode training source. Already reflected in
+`cathode_s2.yaml` (stub, marked DESCOPED). No further S2 work planned.
+
+**(b) Metric policy — all boundary types (2026-07):** For the LSCF/GDC cathode, track
+ALL boundary types: total TPB, active TPB, AND double-phase-boundary (DPB) interface areas.
+Oxygen reacts at both TPB and two-phase interfaces in this MIEC cathode system. DPB is ADDED
+alongside existing TPB metrics (nothing replaced). Per-phase SSA remains important.
+Implementation: `compute_dpb_densities()` in `4_CNNCT/analyze.py`; cathode config has
+`dpb_informational: false` and `reaction_pairs: [[LSCF, Pore]]`; anode config has
+`dpb_informational: true` (DPB computed but not scored for anode).
+Self-check: sum(dpb_A_B for B≠A) == SSA_A × vf_A holds exactly for all phases (verified).
+
+**(c) Voxel size verification directive:** z voxel size is EXPECTED to equal x/y (~40 nm)
+but must be verified empirically, not assumed. **RESOLVED by `0_PRV/check_voxel_isotropy.py`:**
+- Direct evidence from struct.txt: z = 40.2665 nm; x = 40.340 nm; y = 40.140 nm
+- z/x = 0.9982 → voxels are isotropic within 0.2% (confirmed)
+- Autocorrelation z/x ≈ 0.80 reflects genuine microstructural anisotropy (FIB pillar
+  geometry: structures shorter along the pillar axis = z), NOT a calibration error
+- `cathode_s1_supercrop.yaml`: voxel_size_um.z updated from null → 0.040267 µm
+- Full report: `0_PRV/VOXEL_ISOTROPY.md`
+
+**(d) More cathode volumes:** Prof. Jin is asking the data provider for additional cathode
+volumes. New volumes should be added as new config files (`configs/<name>.yaml`); no code
+changes required. The config system is designed for this.
+
+### Open questions (remaining after Phase 2)
+
+- **Anode voxel size**: 0.1 µm (100 nm) is still undocumented — no source found in any
+  file. Confirm with Prof. Jin (open question from Phase 1).
 
 ### tau-net and SSA surrogate validity
 

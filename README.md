@@ -44,6 +44,7 @@ GAN-PH/
 │   ├── make_test_vtk.py           # build a ground-truth test VTK from a known structure
 │   ├── verify_slices.py           # validate exported PNGs against ground truth
 │   ├── diagnose_vf.py             # forensic tool for volume-fraction drift
+│   ├── check_voxel_isotropy.py    # empirically verify z voxel spacing via autocorrelation + struct.txt; outputs VOXEL_ISOTROPY.md
 │   └── README.md                  # usage + phase/format conventions
 │
 ├── preprocess_dream3d.py       # DREAM.3D PNG → BMP voxel-stack pipeline
@@ -256,6 +257,7 @@ See `CLAUDE.md` for the full hyperparameter table and `5_TAU/RESULTS.md` for the
 **`4_CNNCT/` — Transport validation.** `analyze.py` computes:
 - **Phase connectivity** — `scipy` connected-component labeling, checking whether a component spans z = 0 → z = 63 (percolation through the electrode thickness).
 - **Active TPB density** (µm⁻²) — triple-phase-boundary sites where Ni, YSZ, and Pore all percolate (the electrochemically active ones).
+- **DPB interface areas** (µm⁻¹) — double-phase-boundary face counts between every phase pair, plus percolation-weighted variants for electrochemically active pairs (cathode config only; informational for anode). Self-check: sum(dpb_A_B for B≠A) == SSA_A × vf_A.
 - **Tortuosity** — via `taufactor` (requires percolating phases to converge).
 - **S-values** — Yu et al. 2025 distribution-similarity score: `S ≥ 0.85` OK, `0.70–0.85` Marginal, `< 0.70` Fail.
 
