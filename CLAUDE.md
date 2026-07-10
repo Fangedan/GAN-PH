@@ -565,7 +565,8 @@ OK on every scored metric. (N_ref=6 makes these ceilings noisy — treat as indi
 > G_loss = WGAN-GP + 1000×vf + 50×conn(pore). Tau, TPB proxy, YSZ-density all OFF.
 > 216 epochs, 6 batches/epoch, checkpoints at 54/108/162/216. ~1296 G-steps.
 > Pipeline: `cathode_run0_pipeline.ps1`. Report: `1_GAN/CATHODE_RUN0_REPORT.md`.
-> Status: **TRAINING IN PROGRESS** (launched 2026-07-09 14:30, expected done ~16:10).
+> Status: **COMPLETE + EVALUATION HARDENED** (2026-07-10).
+> Hardening script: `4_CNNCT/cathode_eval_hardened.py`. Outputs: `cathode_run0_hardened.csv`, `cathode_run0_ceiling.csv`.
 
 ### Loss configuration
 
@@ -580,31 +581,56 @@ OK on every scored metric. (N_ref=6 makes these ceilings noisy — treat as indi
 | τ loss | 50 | OFF (no `--tau-estimator`, cathode tau-net not trained) |
 | SSA (anode estimator) | 1000 | MONITORING ONLY (timing=9999) |
 
-### S-value results (ep216 final, 50 structures, scored metrics)
+### S-value results — HARDENED (ref = 24 str32 crops, bootstrap CI 16th–84th pct)
 
-| Metric | S-value | |
+> Previous scorecard used 6 str64 crops — too few for reliable KS statistics. Re-scored below.
+
+#### Checkpoint progression
+
+| Metric | ep54 (N=20) | ep108 (N=20) | ep162 (N=20) | ep216 (N=50) |
+|---|---|---|---|---|
+| conn_LSCF | 0.777 M | **0.885 OK** | 0.800 M | 0.768 M |
+| conn_GDC | 0.843 M | 0.796 M | 0.796 M | 0.815 M |
+| conn_Pore | 0.802 M | 0.824 M | **0.874 OK** | **0.874 OK** |
+| total_tpb | 0.623 F | 0.684 F | 0.731 M | 0.794 M |
+| active_tpb | **0.952 OK** | **0.971 OK** | **0.893 OK** | **0.881 OK** |
+| active_tpb_frac | 0.820 M | **0.906 OK** | 0.849 M | 0.821 M |
+| dpb_LSCF_GDC | 0.717 M | **0.882 OK** | 0.815 M | 0.743 M |
+| dpb_LSCF_Pore | 0.654 F | 0.741 M | 0.758 M | 0.844 M |
+| dpb_perc_LSCF_Pore | **0.870 OK** | **0.971 OK** | **0.878 OK** | 0.810 M |
+| dpb_GDC_Pore | 0.721 M | **0.887 OK** | 0.817 M | 0.844 M |
+| **OK / M / F** | 2 / 6 / 2 | **6 / 3 / 1** | 3 / 7 / 0 | 2 / 8 / 0 |
+
+#### Pseudo-ceiling (real-vs-real S, 12 low crops vs 6 high crops, truly disjoint)
+
+| Metric | Ceiling S | Band |
 |---|---|---|
-| conn_LSCF | 0.779 | MARGINAL |
-| conn_GDC | 0.870 | OK |
-| conn_Pore | 0.859 | OK |
-| total_tpb | 0.802 | MARGINAL |
-| active_tpb | 0.934 | OK |
-| active_tpb_frac | 0.852 | OK |
-| dpb_LSCF_GDC | 0.734 | MARGINAL |
-| dpb_LSCF_Pore | 0.859 | OK |
-| dpb_perc_LSCF_Pore | 0.786 | MARGINAL |
-| dpb_GDC_Pore | 0.817 | MARGINAL |
+| conn_LSCF | 0.676 | F |
+| conn_GDC | 0.840 | M |
+| conn_Pore | 0.742 | M |
+| total_tpb | 0.652 | F |
+| active_tpb | 0.852 | OK |
+| active_tpb_frac | 0.832 | M |
+| dpb_LSCF_GDC | 0.702 | M |
+| dpb_LSCF_Pore | 0.659 | F |
+| dpb_perc_LSCF_Pore | 0.574 | F |
+| dpb_GDC_Pore | 0.761 | M |
 
-**5 OK, 5 MARGINAL, 0 FAIL.** Strong baseline — no scored metric below 0.70 with zero cathode-specific
-auxiliary losses. Compare: anode run0 had tau_Ni=0.649 F, tau_YSZ=0.484 F with the same minimal setup.
+Ceiling is in FAIL for conn_LSCF, total_tpb, dpb_LSCF_Pore, dpb_perc_LSCF_Pore — spatial
+heterogeneity in the small Supercrop volume means real crops in disjoint spatial regions score
+below MARGINAL against each other on these metrics. Generator already exceeds ceiling on total_tpb.
 
-**Key findings:**
-- conn_LSCF (0.779 M) is the primary gap — oscillates, reached 0.901 OK at ep108 but degraded.
-- total_tpb (0.802 M) improving monotonically across epochs; a calibrated cathode tpb_proxy would push to OK.
-- conn_GDC (0.870 OK) is surprisingly well-matched — cathode GDC is more learnable than anode YSZ.
-- Memorization: gen mean 0.562 < baseline 0.593 → no memorization, generator generalizes.
-- Best checkpoint: ep108 (7 OK, 2 M, 1 F) vs ep216 (5 OK, 5 M, 0 F) — tradeoff documented in report.
+**Key findings (hardened):**
+- conn_LSCF gap remains the priority: ceiling=0.676 F, generator=0.768–0.885 M/OK.
+  The ep108 spike to 0.885 OK is not robustly distinguishable from ep216 (bootstrap CIs overlap).
+  The "oscillation" narrative from the 6-crop report is not supported by error bars.
+- total_tpb at ep216 (0.794 M) already exceeds the real-vs-real ceiling (0.652 F).
+  Calibrated tpb_proxy loss may not be needed if ceiling remains below MARGINAL with more data.
+- conn_GDC (0.796–0.843 M) near its ceiling (0.840 M) — no headroom for OK without more data.
+- Memorization: gen mean 0.562 < baseline 0.593 → no memorization.
+- Best checkpoint: ep108 (6 OK, 1 F) or ep216 (0 F, monotonically improving TPB/DPB) — domain choice.
 
+**Run1 recommendations: PENDING RE-EVALUATION** (original recs written against 6-crop scorecard).
 Full details in `1_GAN/CATHODE_RUN0_REPORT.md`.
 
 ---

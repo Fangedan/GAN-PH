@@ -1,11 +1,12 @@
-# Cathode Run 0 — Morning Report
+# Cathode Run 0 — Report (Hardened Evaluation)
 
 > Branch: feature/cathode-run0
 > Dataset: S1 Supercrop (LSCF/GDC/Pore, 64³ voxels, ~40 nm voxel)
-> Training set: 24 crops (stride-32 TRAIN region)
-> Reference set: 6 crops (stride-64, same TRAIN region — val split geometrically impossible)
+> Training set: 24 crops (stride-32, TRAIN region)
+> Training-region reference set: 24 stride-32 crops (same region; no held-out val — see Evaluation Limits below)
 > Config: cathode_s1_supercrop
-> Completed: 2026-07-09, ~16:10 local time
+> Training completed: 2026-07-09, ~16:10 local time
+> Evaluation hardened: 2026-07-10 — re-scored against 24 str32 crops; bootstrap CIs added
 
 ---
 
@@ -38,43 +39,41 @@
 
 ---
 
-## S-value scorecard
+## Evaluation Limits
+
+- **N_ref = 24** (stride-32 training-region crops). KS test power improves over the original 6 str64 crops but remains limited. Two samples from the same underlying distribution can produce S-values below MARGINAL by chance.
+- **No held-out val set**: Y=283 voxels; no stride-aligned 64-cube starts at or after y=219. The training-region reference set and the training data are the same 24 crops. S-values measure fidelity-to-training-distribution, not generalization.
+- **Correlated reference samples**: stride-32 with cube-size 64 means adjacent crops share 32 voxels. The reference set is not iid; within-group correlation inflates effective within-group homogeneity and can bias S upward for metrics with strong spatial gradients.
+- **Pseudo-ceiling below MARGINAL for several metrics**: real-vs-real S-values (12 vs 6 disjoint crops) are in FAIL range for conn_LSCF, total_tpb, dpb_LSCF_Pore, dpb_perc_LSCF_Pore (see pseudo-ceiling table). For those metrics, FAIL/MARGINAL generator scores partly reflect genuine spatial heterogeneity in the S1 Supercrop volume, not solely generator inadequacy.
+- **Memorization check limitation**: the symmetry group used (16 z-preserving rotations/flips) detects exact, rotated, or flipped copies but does NOT detect translated patches. A generated structure overlapping a training crop with a spatial offset will not be flagged.
+
+---
+
+## S-value scorecard (hardened, ref = 24 str32 crops)
 
 > S ≥ 0.85 = OK, 0.70–0.85 = MARGINAL, < 0.70 = FAIL.
 > Tau is informational only (cathode config: `tau_scored: false`).
-> Reference population: 6 stride-64 crops (small N → KS test has low power; treat as indicative).
-> Real-vs-real ceiling: all scored metrics ≥ 0.855 OK (no metric intrinsically limited).
+> Bootstrap: 16th–84th percentile, 500 iterations, resampling both ref and gen sets.
 
-### Checkpoint progression (20 structures each)
+### Checkpoint progression with bootstrap CI
 
-| Epoch | conn_LSCF | conn_GDC | conn_Pore | total_tpb | active_tpb | active_tpb_frac | dpb_LSCF_GDC | dpb_LSCF_Pore | dpb_perc_LSCF_Pore | dpb_GDC_Pore |
-|---|---|---|---|---|---|---|---|---|---|---|
-| 54  | 0.778 M | 0.893 OK | 0.813 M | 0.609 F | 0.904 OK | 0.847 M | 0.736 M | 0.649 F | 0.883 OK | 0.679 F |
-| 108 | 0.901 OK | 0.852 OK | 0.827 M | 0.688 F | 0.909 OK | 0.934 OK | 0.857 OK | 0.736 M | 0.915 OK | 0.841 M |
-| 162 | 0.807 M | 0.852 OK | 0.869 OK | 0.726 M | 0.951 OK | 0.911 OK | 0.814 M | 0.765 M | 0.866 OK | 0.793 M |
-| **216 (final)** | **0.779 M** | **0.870 OK** | **0.859 OK** | **0.802 M** | **0.934 OK** | **0.852 OK** | **0.734 M** | **0.859 OK** | **0.786 M** | **0.817 M** |
+| Metric | ep54 (N=20) | ep108 (N=20) | ep162 (N=20) | ep216 (N=50) |
+|---|---|---|---|---|
+| conn_LSCF | 0.777 M [0.719–0.837] | **0.885 OK** [0.808–0.914] | 0.800 M [0.740–0.852] | 0.768 M [0.722–0.814] |
+| conn_GDC | 0.843 M [0.777–0.895] | 0.796 M [0.742–0.857] | 0.796 M [0.738–0.850] | 0.815 M [0.767–0.858] |
+| conn_Pore | 0.802 M [0.752–0.829] | 0.824 M [0.713–0.844] | **0.874 OK** [0.841–0.877] | **0.874 OK** [0.844–0.876] |
+| total_tpb | 0.623 F [0.599–0.625] | 0.684 F [0.649–0.685] | 0.731 M [0.691–0.739] | 0.794 M [0.752–0.807] |
+| active_tpb | **0.952 OK** [0.887–0.953] | **0.971 OK** [0.892–0.963] | **0.893 OK** [0.829–0.940] | **0.881 OK** [0.839–0.915] |
+| active_tpb_frac | 0.820 M [0.761–0.884] | **0.906 OK** [0.837–0.943] | 0.849 M [0.784–0.910] | 0.821 M [0.785–0.858] |
+| dpb_LSCF_GDC | 0.717 M [0.680–0.735] | **0.882 OK** [0.824–0.904] | 0.815 M [0.773–0.851] | 0.743 M [0.712–0.755] |
+| dpb_LSCF_Pore | 0.654 F [0.625–0.670] | 0.741 M [0.686–0.768] | 0.758 M [0.701–0.779] | 0.844 M [0.778–0.856] |
+| dpb_perc_LSCF_Pore | **0.870 OK** [0.793–0.873] | **0.971 OK** [0.826–0.926] | **0.878 OK** [0.787–0.909] | 0.810 M [0.753–0.862] |
+| dpb_GDC_Pore | 0.721 M [0.683–0.731] | **0.887 OK** [0.820–0.903] | 0.817 M [0.766–0.842] | 0.844 M [0.798–0.853] |
+| **OK count** | **2** | **6** | **3** | **2** |
+| **MARGINAL** | **6** | **3** | **7** | **8** |
+| **FAIL** | **2** | **1** | **0** | **0** |
 
-### Final scorecard (ep216, 50 structures — scored metrics)
-
-| Metric | S-value | Interpretation |
-|---|---|---|
-| conn_LSCF | 0.779 | MARGINAL |
-| conn_GDC | 0.870 | OK |
-| conn_Pore | 0.859 | OK |
-| total_tpb | 0.802 | MARGINAL |
-| active_tpb | 0.934 | OK |
-| active_tpb_frac | 0.852 | OK |
-| dpb_LSCF_GDC | 0.734 | MARGINAL |
-| dpb_LSCF_Pore | 0.859 | OK |
-| dpb_perc_LSCF_Pore | 0.786 | MARGINAL |
-| dpb_GDC_Pore | 0.817 | MARGINAL |
-
-**Summary: 5 OK, 5 MARGINAL, 0 FAIL. No scored metric below 0.70.**
-
-This is a strong baseline for a run with no cathode-specific auxiliary losses.
-Compare: anode run0 had tau_Ni=0.649 F, tau_YSZ=0.484 F with the same minimal loss setup.
-
-### Tau metrics (final, informational only)
+### Tau metrics (ep216, informational only)
 
 | Metric | S-value | Note |
 |---|---|---|
@@ -84,9 +83,44 @@ Compare: anode run0 had tau_Ni=0.649 F, tau_YSZ=0.484 F with the same minimal lo
 
 ---
 
+## Pseudo-ceiling (real-vs-real S)
+
+> Split: low half (y0 ∈ {0,32}, N=12, covers y=0–95) vs high half (y0=96, N=6, covers y=96–159).
+> These halves share **zero voxels** (max_low=95, min_high=96, truly disjoint).
+> Bootstrap CI: 16th–84th percentile, 500 iterations.
+>
+> **Geometry caveat**: a 12-vs-12 disjoint split is geometrically impossible with this
+> dataset (stride=32, cube=64 on 283-voxel Y axis). The closest achievable is 12 vs 6.
+> Within-half crops overlap by 32 voxels, inflating within-half homogeneity and thus
+> ceiling S. These ceiling values are an **upper bound** on what any generator can
+> achieve against this reference population.
+
+| Metric | Ceiling S | CI [p16–p84] | Band |
+|---|---|---|---|
+| conn_LSCF | 0.676 | [0.601–0.750] | F |
+| conn_GDC | 0.840 | [0.709–0.903] | M |
+| conn_Pore | 0.742 | [0.685–0.760] | M |
+| total_tpb | 0.652 | [0.610–0.652] | F |
+| active_tpb | 0.852 | [0.787–0.903] | OK |
+| active_tpb_frac | 0.832 | [0.765–0.913] | M |
+| dpb_LSCF_GDC | 0.702 | [0.646–0.700] | M |
+| dpb_LSCF_Pore | 0.659 | [0.598–0.672] | F |
+| dpb_perc_LSCF_Pore | 0.574 | [0.522–0.627] | F |
+| dpb_GDC_Pore | 0.761 | [0.685–0.799] | M |
+
+**Interpretation**: conn_LSCF, total_tpb, dpb_LSCF_Pore, and dpb_perc_LSCF_Pore have
+pseudo-ceilings in the FAIL band. For these metrics, the generator scoring FAIL or MARGINAL
+may partly reflect genuine spatial heterogeneity in the 151×283×120 Supercrop volume rather
+than generator failure. This does not mean these metrics are uninformative — the generator
+should approach or exceed the ceiling — but FAIL scores below the ceiling do not indicate
+catastrophic mode collapse.
+
+---
+
 ## Memorization check
 
 > Source: `4_CNNCT/cathode_run0_memo.csv`.
+> Limitation: detects exact/rot/flip copies (16 z-preserving symmetries) but not translated patches.
 
 | Metric | Value |
 |---|---|
@@ -97,53 +131,69 @@ Compare: anode run0 had tau_Ni=0.649 F, tau_YSZ=0.484 F with the same minimal lo
 | gen_mean − baseline_mean | −0.032 |
 | Verdict | **OK — no memorization detected** |
 
-The generator is *more* diverse than training crops (gen mean < baseline mean).
-This is expected and healthy — the generator produces novel combinations, not copies.
-
----
-
-## Key observations
-
-- [x] **Pore connectivity converged** — conn_Pore OK (0.859) with generic pore loss. Loss works.
-- [x] **GDC connectivity OK (0.870)** — the generator learns GDC percolation without targeted loss.
-  Remarkable: this is the cathode analogue of anode YSZ, which never exceeded 0.707 across 14 runs.
-  The cathode GDC appears more learnable than the anode YSZ (likely due to larger cluster sizes).
-- [~] **LSCF connectivity MARGINAL (0.779)** — oscillates: 0.778 M → 0.901 OK → 0.807 M → 0.779 M.
-  The generator can achieve OK (ep108) but doesn't hold it with more training. Suggests competing
-  dynamics between LSCF and GDC phases (similar to anode Ni/Pore tau tradeoff via softmax coupling).
-  Priority target for run1: LSCF min-slice density loss calibrated to cathode VF.
-- [~] **total_tpb MARGINAL (0.802)** — improving monotonically across epochs (0.609→0.802) and still
-  rising at ep216. A cathode-calibrated tpb_proxy loss in run1 would push this to OK.
-  NOTE: the anode proxy target (0.002) is NOT valid for cathode (different VF composition).
-  Cathode target TBD (requires empirical calibration on soft generator output).
-- [x] **active_tpb OK (0.934)** — the fraction of TPB that is active is well-matched.
-- [~] **dpb_LSCF_GDC MARGINAL (0.734)** — interface between the two solid phases is off.
-  Likely reflects VF distribution mismatch: generated LSCF/GDC VFs may differ from reference.
-- [x] **dpb_LSCF_Pore OK (0.859)** — key cathode reaction interface is well-matched.
-- [~] **dpb_GDC_Pore MARGINAL (0.817)** — close to OK (0.85 threshold).
-- [x] **No memorization** — gen_mean (0.562) < baseline (0.593). Generator generalizes.
-- [x] **No training divergence** — all 4 checkpoints present, losses finite throughout.
+The generator is more diverse than training crops (gen mean < baseline mean). Expected and healthy.
 
 ---
 
 ## Best checkpoint
 
-| Checkpoint | OK count | MARGINAL | FAIL | Notes |
+| Checkpoint | OK | MARGINAL | FAIL | Notes |
 |---|---|---|---|---|
-| ep54  | 2 | 5 | 3 | Early — DPB and TPB not converged |
-| ep108 | **7** | 2 | 1 | Best connectivity; total_tpb still FAIL |
-| ep162 | 6 | 4 | 0 | Good balance |
-| ep216 | 5 | **5** | **0** | No FAILs; best TPB/DPB; LSCF conn lost |
+| ep54 | 2 | 6 | 2 | Early; conn and TPB/DPB not converged |
+| ep108 | **6** | 3 | **1** | Best OK count; total_tpb still FAIL |
+| ep162 | 3 | 7 | 0 | Good balance; fewer FAILs than ep54/108 |
+| ep216 | 2 | **8** | 0 | 0 FAILs; best TPB/DPB trajectory |
 
-**ep108 has the most OK metrics (7) but 1 FAIL (total_tpb=0.688).**
-**ep216 has 0 FAILs and is the conservative choice for downstream use.**
+**ep108 has the most OK metrics (6) but carries 1 FAIL (total_tpb=0.684 F).**
+**ep216 has 0 FAILs and shows the strongest total_tpb trajectory (0.794 M, still rising).**
 
-For run1 design: ep108 suggests the generator CAN achieve conn_LSCF=0.901 OK —
-the issue is sustaining it at longer training. Consider checkpointing at 108 epochs for run1.
+**Is ep108's conn_LSCF advantage over ep216 real or noise?** Bootstrap CIs overlap
+(ep108: [0.808–0.914]; ep216: [0.722–0.814] — overlap window 0.808–0.814). The improvement
+is marginally distinguishable but narrow. conn_LSCF is NOT reliably better at ep108 vs ep216;
+both are within each other's 1-sigma bands.
+
+**Is ep108 genuinely better than ep216 overall?** They target different trade-offs:
+ep108 optimizes connectivity (conn_LSCF OK, dpb_LSCF_GDC OK) at the cost of 1 FAIL on
+total_tpb. ep216 achieves 0 FAILs with total_tpb approaching MARGINAL-OK boundary. The
+choice between them is a domain judgment (prefer no-FAIL vs prefer more-OKs), not a
+statistical question the data resolves.
+
+For run1 design: the generator CAN achieve conn_LSCF=0.885 OK (ep108), but does not
+sustain it at longer training. A dedicated LSCF connectivity loss in run1 is needed to
+lock in this behavior before TPB dynamics dominate.
 
 ---
 
-## Next steps (cathode run1 design)
+## Key observations
+
+- [x] **Pore connectivity converged** — conn_Pore OK at ep162/216 (0.874) without targeted loss.
+- [x] **GDC connectivity MARGINAL** — consistently 0.796–0.843 across all checkpoints. GDC percolation
+  is learnable (much better than anode YSZ which was stuck at 0.46–0.49 across 14 runs) but
+  does not reach OK without a targeted loss. ceiling = 0.840 M, so generator is near the ceiling.
+- [~] **LSCF connectivity oscillates within noise** — point estimate peaks at ep108 (0.885 OK) but
+  bootstrap CIs overlap between all checkpoint pairs except total_tpb. The claim of "competing
+  dynamics" from the original report is not supported by the error bars. ep108 is the best
+  point estimate; the gain over ep216 is marginally distinguishable but not robust.
+- [~] **total_tpb monotonically improving** (0.623F → 0.684F → 0.731M → 0.794M) — this IS
+  distinguishable across adjacent checkpoints: ep108 vs ep162 (F vs M no-overlap), ep162 vs ep216
+  (M vs M, slightly wider but clearly separated). Still MARGINAL at ep216; ceiling = 0.652 F,
+  so the generator is already exceeding the real-vs-real ceiling.
+- [x] **active_tpb consistently OK** — 0.881–0.971 across all checkpoints.
+- [x] **No memorization** — gen_mean (0.562) < baseline (0.593). Generator generalizes.
+- [x] **No training divergence** — all 4 checkpoints present, losses finite throughout.
+- [!] **Pseudo-ceiling below FAIL for conn_LSCF, total_tpb, dpb_LSCF_Pore, dpb_perc_LSCF_Pore** —
+  the dataset itself does not achieve MARGINAL on these metrics between disjoint halves. Run1
+  should target exceeding the ceiling rather than targeting an absolute OK/MARGINAL band on these
+  metrics without knowing whether real data can achieve OK with a larger reference set.
+
+---
+
+## Next steps (cathode run1 design) — PENDING RE-EVALUATION
+
+> These recommendations were written against the original 6-crop scorecard.
+> The hardened evaluation changes the picture on some points (notably: total_tpb ceiling is
+> already exceeded by ep216; conn_LSCF improvement at ep108 is not robust to bootstrap).
+> Full re-evaluation needed before committing run1 design.
 
 ### Priority 1 — conn_LSCF loss
 Add a min-slice density loss for LSCF (channel 0, analogous to anode's `w_conn_ysz`):
@@ -152,18 +202,19 @@ Add a min-slice density loss for LSCF (channel 0, analogous to anode's `w_conn_y
 - Activate from epoch 1 (not gated)
 - Weight: start at 200 (same as anode w_conn_ysz) and reduce if LSCF over-constrains
 
-### Priority 2 — total_tpb calibrated proxy
+### Priority 2 — total_tpb calibrated proxy *(RE-EVALUATE — ceiling already exceeded)*
 Add a cathode-calibrated tpb_proxy loss:
-- Calibration step needed: generate ~20 structures from ep216, compute the raw
-  `(ch0_prob * ch1_prob * ch2_prob).mean()` on the generator's soft output for
-  each structure, correlate with physical total_tpb. The proxy target for cathode
-  is NOT 0.002 (anode value).
-- Activate from epoch tau_timing (default 10)
+- Note: ep216 total_tpb=0.794 M already exceeds the pseudo-ceiling (0.652 F). This metric may
+  not need a proxy loss if the ceiling remains below MARGINAL with a larger reference set.
+  If more cathode crops become available (Prof. Jin directive), re-run the ceiling analysis first.
+- If still needed: calibrate cathode proxy target empirically (NOT anode 0.002 value).
 
-### Priority 3 — epoch budget for run1
-ep108 is a natural sweet spot (conn_LSCF OK before it degrades). Consider:
-- Train 108 epochs (=648 G-steps) and save final only
-- OR train 216 epochs with a LSCF-connectivity loss that locks in conn_LSCF before it drifts
+### Priority 3 — epoch budget for run1 *(RE-EVALUATE — ep108 advantage not robust)*
+- ep108 appeared to be a sweet spot in the original 6-crop analysis (conn_LSCF 7 OK).
+- With 24-crop analysis, ep108 has 6 OK (not 7) and the conn_LSCF improvement over ep216 is
+  marginally distinguishable, not robust. The "sweet spot" narrative is weakened.
+- Recommendation: train 216 epochs (matching run0) with a LSCF-connectivity loss added,
+  then checkpoint at 108 and 216 to check if the loss stabilizes conn_LSCF without reverting.
 
 ### Branch
 Create `feature/cathode-run1` off `feature/cathode-run0`. Do NOT modify `feature/dataset-configs`.
@@ -173,12 +224,15 @@ Create `feature/cathode-run1` off `feature/cathode-run0`. Do NOT modify `feature
 ## Notes on dataset limitations
 
 - **0 val crops**: Y=283 voxels, val_start=219 — no stride-aligned crop fits in [219, 283).
-  Reference population is 6 stride-64 TRAIN crops (non-overlapping but not held-out).
-  KS test with N_ref=6 has low statistical power — S-values are indicative, not definitive.
+  Training-region reference set is the same 24 stride-32 TRAIN crops used for training.
+  S-values measure training-distribution fidelity, not generalization.
+- **Pseudo-ceiling caveat**: ceiling was computed on 12 vs 6 crops (not 12 vs 12 — geometrically
+  impossible). Low N_high=6 inflates CI width; ceiling point estimates are meaningful, bands
+  are wide. More cathode volumes (Prof. Jin directive) will improve this.
 - **VF drift**: stride-32 crops show GDC −5.6pp drift vs parent volume (spatial inhomogeneity).
   Generator is conditioned on crop VFs, not parent VF. Monitor generated vs training VFs.
 - **No tau surrogate**: anode tau_net.pth was trained on Ni/YSZ/Pore — invalid for LSCF/GDC/Pore.
-  Tau values computed by taufactor (the actual solver). Informational only.
+  Tau values computed by taufactor (actual solver). Informational only.
 - **Checkpoint path**: training writes to `./save_model/` (repo root) when run as
-  `python 1_GAN/main.py`. This was fixed in `cathode_run0_pipeline.ps1` after training completed;
+  `python 1_GAN/main.py`. Fixed in `cathode_run0_pipeline.ps1` post-training;
   for run1 the pipeline will use `--weights save_model/Generator_NNNepoch.pth`.
