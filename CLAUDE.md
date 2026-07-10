@@ -567,6 +567,7 @@ OK on every scored metric. (N_ref=6 makes these ceilings noisy — treat as indi
 > Pipeline: `cathode_run0_pipeline.ps1`. Report: `1_GAN/CATHODE_RUN0_REPORT.md`.
 > Status: **COMPLETE + EVALUATION HARDENED** (2026-07-10).
 > Hardening script: `4_CNNCT/cathode_eval_hardened.py`. Outputs: `cathode_run0_hardened.csv`, `cathode_run0_ceiling.csv`.
+> **Cathode training PAUSED — DATA-LIMITED.** Run1 designs on file; see report. Blocked pending additional specimens (Prof. Jin data request).
 
 ### Loss configuration
 
@@ -601,9 +602,11 @@ OK on every scored metric. (N_ref=6 makes these ceilings noisy — treat as indi
 | dpb_GDC_Pore | 0.721 M | **0.887 OK** | 0.817 M | 0.844 M |
 | **OK / M / F** | 2 / 6 / 2 | **6 / 3 / 1** | 3 / 7 / 0 | 2 / 8 / 0 |
 
-#### Pseudo-ceiling (real-vs-real S, 12 low crops vs 6 high crops, truly disjoint)
+#### Cross-region heterogeneity (real-vs-real S, 12 low crops vs 6 high crops, truly disjoint)
 
-| Metric | Ceiling S | Band |
+> Not a ceiling — see note below. Measures spatial non-stationarity within this one specimen.
+
+| Metric | Cross-region S | Band |
 |---|---|---|
 | conn_LSCF | 0.676 | F |
 | conn_GDC | 0.840 | M |
@@ -616,21 +619,25 @@ OK on every scored metric. (N_ref=6 makes these ceilings noisy — treat as indi
 | dpb_perc_LSCF_Pore | 0.574 | F |
 | dpb_GDC_Pore | 0.761 | M |
 
-Ceiling is in FAIL for conn_LSCF, total_tpb, dpb_LSCF_Pore, dpb_perc_LSCF_Pore — spatial
-heterogeneity in the small Supercrop volume means real crops in disjoint spatial regions score
-below MARGINAL against each other on these metrics. Generator already exceeds ceiling on total_tpb.
+Cross-region S is in FAIL for conn_LSCF, total_tpb, dpb_LSCF_Pore, dpb_perc_LSCF_Pore.
+This means the specimen's own statistics drift substantially between its y=0–95 and y=96–159
+halves. The generator trains on the full 24-crop pool and can and does outscore this split
+(e.g. total_tpb ep216 = 0.794 M > cross-region 0.652 F). This is expected, not a ceiling
+violation. However, it means the reference distribution is spatially unstable for those metrics
+— optimizing further S against this pool is not physically meaningful without more specimens.
 
 **Key findings (hardened):**
-- conn_LSCF gap remains the priority: ceiling=0.676 F, generator=0.768–0.885 M/OK.
-  The ep108 spike to 0.885 OK is not robustly distinguishable from ep216 (bootstrap CIs overlap).
-  The "oscillation" narrative from the 6-crop report is not supported by error bars.
-- total_tpb at ep216 (0.794 M) already exceeds the real-vs-real ceiling (0.652 F).
-  Calibrated tpb_proxy loss may not be needed if ceiling remains below MARGINAL with more data.
-- conn_GDC (0.796–0.843 M) near its ceiling (0.840 M) — no headroom for OK without more data.
+- conn_LSCF gap remains the primary run1 priority: generator=0.768–0.885, cross-region=0.676.
+  Bootstrap CIs ep108 [0.808–0.914] vs ep216 [0.722–0.814] nearly disjoint (overlap: 6 S-points).
+  Weak evidence of degradation with continued training; revisit when evaluation is better powered.
+- total_tpb at ep216 (0.794 M) already exceeds cross-region agreement (0.652 F). Further
+  optimizing this S against the current reference is not physically meaningful — the reference
+  distribution itself is spatially inhomogeneous on this metric. Proxy loss deferred until more
+  specimens are available.
+- conn_GDC (0.796–0.843 M) near cross-region level (0.840 M) — near the spatial limit of this specimen.
 - Memorization: gen mean 0.562 < baseline 0.593 → no memorization.
 - Best checkpoint: ep108 (6 OK, 1 F) or ep216 (0 F, monotonically improving TPB/DPB) — domain choice.
 
-**Run1 recommendations: PENDING RE-EVALUATION** (original recs written against 6-crop scorecard).
-Full details in `1_GAN/CATHODE_RUN0_REPORT.md`.
+**Run1: ON FILE, EXECUTION PAUSED — DATA-LIMITED.** Full rationale in `1_GAN/CATHODE_RUN0_REPORT.md`.
 
 ---
