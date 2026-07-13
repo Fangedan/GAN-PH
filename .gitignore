@@ -85,6 +85,9 @@ configs/local_paths.yaml
 cathode_crops_*/
 # ── Cathode run generated structure directories ──
 generated_cathode_*/
+# ── Prof. Jin group reference materials (MATLAB source + real volume — never push) ──
+5_TAU/reference_matlab/
+
 # ── Cathode run analysis outputs ──
 4_CNNCT/cathode_run0_memo.csv
 4_CNNCT/cathode_run0_*.csv
