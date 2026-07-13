@@ -4,6 +4,7 @@
 > SSA differentiable loss permanently abandoned. tau_Ni/tau_Pore tradeoff is fundamental.
 > Best config: run5 (tpb-proxy, 50 epochs).
 > **SCOPE CHANGE:** Tortuosity (all phases) is DESCOPED as a success criterion — see section below.
+> **TAU VALIDATION LAYER B COMPLETE (2026-07-13):** MATLAB reference solver ported and cross-validated against taufactor. Ni/Pore MATCH (≤0.5%), YSZ CLOSE (9.6% — one-sided flux vs full-domain, amplified by extreme outlet asymmetry). See 5_TAU/REFERENCE_COMPARISON.md.
 
 ---
 
