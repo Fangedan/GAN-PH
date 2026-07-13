@@ -3,6 +3,6 @@
 # Phase ID mapping: 1=Ni, 2=YSZ, 3=Pore  (matches anode eff_tor_diff.m driver)
 #
 structure_id,phase,tau_reference,source_note
-microstructure_real_vtk,Ni,1.696479,MATLAB-port solver; vtk 100x100x50 cells; pcg_flag=0; relres=8.18e-15
-microstructure_real_vtk,YSZ,4.852585,MATLAB-port solver; vtk 100x100x50 cells; pcg_flag=0; relres=1.35e-14
-microstructure_real_vtk,Pore,1.976911,MATLAB-port solver; vtk 100x100x50 cells; pcg_flag=0; relres=9.59e-15
+microstructure_real_vtk,Ni,1.696479,MATLAB-port solver (commit 7afbb5b); vtk 100x100x50 cells; pcg_flag=0; relres=8.18e-15
+microstructure_real_vtk,YSZ,4.852585,MATLAB-port solver (commit 7afbb5b); vtk 100x100x50 cells; pcg_flag=0; relres=1.35e-14
+microstructure_real_vtk,Pore,1.976911,MATLAB-port solver (commit 7afbb5b); vtk 100x100x50 cells; pcg_flag=0; relres=9.59e-15

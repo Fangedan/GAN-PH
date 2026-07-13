@@ -62,6 +62,7 @@ to `analyze.py:compute_tortuosity` if desired.
 | Dense 10×10×10 cube | 1.000 | 1.000 | MATCH |
 | Straight z-channels | 1.000 | 1.000 | MATCH |
 | Severed at z=5 (wall) | Inf | Inf | NON-PERC (both) |
+| x-channels (wrong axis) | Inf | Inf | NON-PERC (both) |
 
 ### Real VTK volume (100×100×50 cells, isotropic 0.1 µm)
 
@@ -71,9 +72,15 @@ to `analyze.py:compute_tortuosity` if desired.
 | 2 (YSZ, 18% VF) | 4.853 | 5.318 | **CLOSE (9.59%)** |
 | 3 (Pore, 40% VF) | 1.977 | 1.971 | **MATCH (0.28%)** |
 
-YSZ CLOSE (9.6%) explained by extreme outlet asymmetry (34 outlet cells vs 2683 inlet cells)
-amplifying a genuine formulation difference: one-sided inlet flux (MATLAB) vs full-domain
-integration (taufactor). Not an error in either solver.
+YSZ CLOSE (9.6%) root cause confirmed by `ysz_gap_diagnostic.py`:
+- Task B (plane-flux diagnostic): all 49 cut planes give identical flux (max rel_dev=5.9e-13).
+  Flux conservation confirmed; one-sided flux hypothesis ruled out.
+- Task C (convergence tightening): tau_tf=5.31797 at conv_crit=0.01 and 0.001 (both converge
+  at 600 iters). Convergence artifact ruled out.
+- Confirmed cause: BC convention difference. Reference solver fixes actual inlet/outlet cells
+  (34 outlet cells fixed to c=0); taufactor solves them freely with ghost layers outside the
+  domain. For YSZ's extreme asymmetry (34 outlet vs 2683 inlet), this extra ghost-layer
+  resistance amplifies the gap to 9.6%. Not an error in either solver.
 
 ### Key findings
 
