@@ -101,6 +101,7 @@ def compute_reference_tau(
     tol: float = 1e-5,
     maxit: int = 1000,
     verbose: bool = False,
+    return_field: bool = False,
 ) -> dict:
     """
     Port of computeEffectiveTortuosityDiffusionFast.m (z-direction only).
@@ -136,26 +137,29 @@ def compute_reference_tau(
 
     Parameters
     ----------
-    volume   : (Z, Y, X) int array of phase labels
-    phase_id : integer label for the phase to solve
-    spacing  : (dx, dy, dz) voxel sizes in consistent units (e.g. µm)
-    D0       : free diffusivity (default 1.0; cancels in tau formula)
-    tol      : CG convergence tolerance (default 1e-5, matches MATLAB line 148)
-    maxit    : CG maximum iterations (default 1000, matches MATLAB line 149)
-    verbose  : print progress messages
+    volume       : (Z, Y, X) int array of phase labels
+    phase_id     : integer label for the phase to solve
+    spacing      : (dx, dy, dz) voxel sizes in consistent units (e.g. µm)
+    D0           : free diffusivity (default 1.0; cancels in tau formula)
+    tol          : CG convergence tolerance (default 1e-5, matches MATLAB line 148)
+    maxit        : CG maximum iterations (default 1000, matches MATLAB line 149)
+    verbose      : print progress messages
+    return_field : if True, include "C" and "pathway" in the returned dict
 
     Returns
     -------
     dict with keys:
-      tau_eff      : float — effective tortuosity (np.inf if not percolating)
-      Deff         : float — effective diffusivity
-      epsilon      : float — total phase VF (BEFORE percolation filter)
-      epsilon_perc : float — percolating phase VF (after filter)
-      n_nodes      : int   — total pathway voxels
-      n_interior   : int   — interior (unknown) voxels solved
-      pcg_flag     : int   — CG convergence flag (0 = converged, -1 = not run)
-      pcg_relres   : float — relative residual norm after solve
-      percolating  : bool  — whether a percolating cluster was found
+      tau_eff      : float       — effective tortuosity (np.inf if not percolating)
+      Deff         : float       — effective diffusivity
+      epsilon      : float       — total phase VF (BEFORE percolation filter)
+      epsilon_perc : float       — percolating phase VF (after filter)
+      n_nodes      : int         — total pathway voxels
+      n_interior   : int         — interior (unknown) voxels solved
+      pcg_flag     : int         — CG convergence flag (0 = converged, -1 = not run)
+      pcg_relres   : float       — relative residual norm after solve
+      percolating  : bool        — whether a percolating cluster was found
+      C            : (Z,Y,X) float64 or None  — concentration field (if return_field)
+      pathway      : (Z,Y,X) bool or None     — percolating mask   (if return_field)
     """
     dx, dy, dz = float(spacing[0]), float(spacing[1]), float(spacing[2])
     mask_full = (volume == phase_id)
@@ -164,10 +168,13 @@ def compute_reference_tau(
     epsilon = float(mask_full.mean())
     nz, ny, nx = mask_full.shape
 
+    _none = {"C": None, "pathway": None} if return_field else {}
+
     if not mask_full.any():
         return dict(
             tau_eff=np.inf, Deff=0.0, epsilon=epsilon, epsilon_perc=0.0,
             n_nodes=0, n_interior=0, pcg_flag=-1, pcg_relres=np.nan, percolating=False,
+            **_none,
         )
 
     # line 25: percolation filter
@@ -179,6 +186,7 @@ def compute_reference_tau(
         return dict(
             tau_eff=np.inf, Deff=0.0, epsilon=epsilon, epsilon_perc=0.0,
             n_nodes=0, n_interior=0, pcg_flag=-1, pcg_relres=np.nan, percolating=False,
+            **_none,
         )
 
     epsilon_perc = float(pathway.mean())
@@ -359,7 +367,7 @@ def compute_reference_tau(
     D_eff   = J_avg * L
     tau_eff = (epsilon * D0 / D_eff) if D_eff > 0.0 else np.inf
 
-    return dict(
+    result = dict(
         tau_eff=tau_eff,
         Deff=D_eff,
         epsilon=epsilon,
@@ -370,6 +378,10 @@ def compute_reference_tau(
         pcg_relres=pcg_relres,
         percolating=True,
     )
+    if return_field:
+        result["C"] = C
+        result["pathway"] = pathway
+    return result
 
 
 if __name__ == "__main__":
