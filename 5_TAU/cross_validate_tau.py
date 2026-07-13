@@ -9,6 +9,7 @@ Section A — Analytic cases (both solvers, known ground truth)
   A1. Dense 10x10x10 cube          → tau = 1.000 (both)
   A2. Straight z-channels           → tau = 1.000 (both)
   A3. Phase severed at z=5 (wall)  → non-percolating (Inf / NaN)
+  A4. Wrong-axis channels (x not z) → non-percolating (Inf / NaN)
 
 Section B — Real VTK volume (reference_matlab/microstructure_real.vtk)
   For phases 1, 2, 3:
@@ -168,6 +169,29 @@ def analytic_cases(verbose: bool = False) -> list[dict]:
     tf_ok  = not math.isfinite(tau_tf)    # expect Inf (or NaN)
     results.append({
         "label": "A3 wall at z=5, no percolation",
+        "expected": "non-percolating (both)",
+        "tau_ref": tau_ref, "tau_tf": tau_tf,
+        "pass_ref": ref_ok,
+        "pass_tf":  tf_ok,
+        "verdict": "NON-PERC (both)" if (ref_ok and tf_ok) else f"FAIL ref={'Inf' if ref_ok else f'{tau_ref:.3f}'} tf={'non-perc' if tf_ok else f'{tau_tf:.3f}'}",
+    })
+
+    # A4: Wrong-axis channels (along x, not z) — solvers must report non-percolating.
+    # Channels at z=3 and z=7 span all x but do not reach z=0 or z=nz-1, so neither
+    # solver can find a z-percolating path.  Reuses the axis-check builder from
+    # validate_taufactor.py case4_axis_check.
+    vol4 = np.zeros((10, 10, 10), dtype=np.int32)
+    for y_pos in range(0, 10, 3):
+        vol4[3, y_pos, :] = 1   # full x span at z=3 (not touching z=0 or z=9)
+        vol4[7, y_pos, :] = 1   # full x span at z=7
+    res_ref = compute_reference_tau(vol4, 1, spacing, verbose=verbose)
+    bin4 = (vol4 == 1).astype(np.float32)
+    tau_tf = _taufactor_solve(bin4)
+    tau_ref = res_ref["tau_eff"]
+    ref_ok = not math.isfinite(tau_ref)
+    tf_ok  = not math.isfinite(tau_tf)
+    results.append({
+        "label": "A4 x-channels (wrong axis), non-perc",
         "expected": "non-percolating (both)",
         "tau_ref": tau_ref, "tau_tf": tau_tf,
         "pass_ref": ref_ok,
@@ -384,7 +408,7 @@ def main() -> None:
 
     # ── Section A: Analytic cases ──
     print()
-    print("Section A — Analytic cases")
+    print("Section A — Analytic cases (A1–A4)")
     print(
         f"  {'Case':<35}  {'tau_ref':>9}  {'tau_tf':>9}  "
         f"{'ref':>5}  {'tf':>5}  {'verdict'}"
